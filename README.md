@@ -8,7 +8,7 @@ editor parts on macOS). It clones the component repos and runs each one's own in
 | [`zsh`](https://github.com/NobodyOne04/zsh) | fast zsh with p10k prompt, fzf, devops helpers | ✓ | ✓ |
 | [`nvim`](https://github.com/NobodyOne04/nvim) | Neovim: LSP, treesitter, telescope, completion, Copilot | ✓ | ✓ |
 | [`hyprland`](https://github.com/NobodyOne04/hyprland) | Hyprland desktop: bar, launcher, lock, idle, Ghostty | ✓ | |
-| [`sddm-login`](https://github.com/NobodyOne04/sddm-login) | login screen: greetd + archminimal greeter | ✓ (optional) | |
+| [`sddm-login`](https://github.com/NobodyOne04/sddm-login) | login screen: greetd + Quickshell greeter (no SDDM) | ✓ | |
 
 ## Fresh Arch install
 
@@ -22,9 +22,8 @@ ssh-keygen -t ed25519 && cat ~/.ssh/id_ed25519.pub   # add it at https://github.
 git clone git@github.com:NobodyOne04/linux_setup.git ~/projects/linux_setup
 cd ~/projects/linux_setup
 make doctor     # checks tools and GitHub access, shows the plan
-make all        # base packages, repos, zsh, nvim, desktop
-make greeter    # optional: archminimal login screen instead of SDDM (asks first)
-reboot
+make all        # base packages, repos, zsh, nvim, desktop, login screen
+reboot          # the archminimal login screen starts Hyprland
 ```
 
 `make all` asks for your sudo password and confirms each pacman install. Add `DRY_RUN=1` to any target to see
@@ -48,7 +47,7 @@ every command without running it, e.g. `make all DRY_RUN=1`.
 - Every component installs through its own `Makefile`, so each repo also works on its own.
 - Nothing is overwritten: the component installers move existing configs to `*.bak-<date>` and can restore them
   (`make -C ~/projects/zsh unlink`, `make -C ~/projects/nvim unlink`, `make -C ~/projects/hyprland uninstall`,
-  `sudo make -C ~/projects/sddm-login/greetd revert`).
+  `sudo make -C ~/projects/sddm-login revert`).
 - Credentials never go into these repos. The zsh installer moves any keys found in an old `~/.zshrc` into
   `~/.config/zsh/secrets.zsh` (mode 600); add new ones with `secret-add NAME`.
 
@@ -60,5 +59,6 @@ every command without running it, e.g. `make all DRY_RUN=1`.
 4. **zsh**: tools, link `~/.zshrc`, make zsh the login shell
 5. **nvim**: tools, link `~/.config/nvim`, plugins at locked versions, language servers
 6. **desktop**: Hyprland packages, Bluetooth and power-profile services, config links
-
-The login screen is a separate step because it changes how the machine boots.
+7. **greeter**: greetd + the Quickshell login screen. It takes over from whatever display manager is active
+   (archinstall's Hyprland profile installs SDDM) and records it, so `sudo make -C ~/projects/sddm-login revert`
+   can undo it. To uninstall SDDM entirely afterwards: `sudo make -C ~/projects/sddm-login remove-sddm`.

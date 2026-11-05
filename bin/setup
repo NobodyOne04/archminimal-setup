@@ -10,8 +10,9 @@
 #   zsh       shell (zsh repo: deps, link, login shell)
 #   nvim      editor (nvim repo: tools, link, plugins, language servers)
 #   desktop   Hyprland desktop: bar, launcher, lock, Ghostty (Arch only)
-#   all       doctor base repos zsh nvim desktop
-#   greeter   login screen: greetd + archminimal greeter, replaces SDDM (Arch only; asks first)
+#   greeter   login screen: greetd + Quickshell greeter; replaces the active
+#             display manager, e.g. SDDM (Arch only)
+#   all       doctor base repos zsh nvim desktop greeter
 #   status    branch / changes / links for every repo
 #   update    pull every repo, then update plugins
 #   check     run each repo's own checks
@@ -150,12 +151,11 @@ cmd_desktop() {
 }
 
 cmd_greeter() {
-  step "login screen (greetd + archminimal greeter)"
+  step "login screen (greetd + Quickshell)"
   need_arch greeter
-  local d; d=$(require_repo sddm-login)/greetd
-  info "this replaces your login manager (SDDM → greetd) from the next boot."
-  info "undo any time with: sudo make -C ${d/#$HOME/\~} revert"
-  confirm "continue?" || { info "skipped"; return 0; }
+  local d; d=$(require_repo sddm-login)
+  info "greetd replaces the active display manager (e.g. SDDM) from the next boot."
+  info "undo: sudo make -C ${d/#$HOME/\~} revert   remove SDDM: sudo make -C ${d/#$HOME/\~} remove-sddm"
   run make -C "$d" deps
   run make -C "$d" check
   run sudo make -C "$d" install
@@ -168,10 +168,14 @@ cmd_all() {
   cmd_repos
   cmd_zsh
   cmd_nvim
-  if (( IS_ARCH )); then cmd_desktop; else info "skipping desktop (Arch only)"; fi
+  if (( IS_ARCH )); then
+    cmd_desktop
+    cmd_greeter
+  else
+    info "skipping desktop and login screen (Arch only)"
+  fi
   step "done"
-  info "open a new terminal for zsh; reboot or log in to Hyprland for the desktop."
-  (( IS_ARCH )) && info "optional login screen: setup greeter"
+  if (( IS_ARCH )); then info "reboot: the archminimal login screen starts Hyprland"; else info "open a new terminal for zsh"; fi
   return 0
 }
 
@@ -191,7 +195,7 @@ cmd_status() {
       nvim)
         if [[ $(readlink "$HOME/.config/nvim" 2>/dev/null) == "$d" ]]; then ok "linked: ~/.config/nvim"; else info "not linked: ~/.config/nvim"; fi ;;
       hyprland)   [[ -x $d/bin/links.sh ]] && "$d/bin/links.sh" status | sed 's/^/  /' ;;
-      sddm-login) if (( IS_ARCH )); then make -s -C "$d/greetd" status 2>/dev/null | sed 's/^/  /'; fi ;;
+      sddm-login) if (( IS_ARCH )); then make -s -C "$d" status 2>/dev/null; fi ;;
     esac
   done
   return 0
@@ -211,7 +215,7 @@ cmd_check() {
   d=$(repo_dir zsh);        [[ -d $d ]] && { step "zsh";        run make -s -C "$d" check || fail=1; }
   d=$(repo_dir nvim);       [[ -d $d ]] && { step "nvim";       run make -s -C "$d" check || fail=1; }
   d=$(repo_dir hyprland);   [[ -d $d ]] && { step "hyprland";   run make -s -C "$d" lint  || fail=1; }
-  d=$(repo_dir sddm-login); [[ -d $d ]] && { step "sddm-login"; run make -s -C "$d/greetd" lint || fail=1; }
+  d=$(repo_dir sddm-login); [[ -d $d ]] && { step "sddm-login"; run make -s -C "$d" lint || fail=1; }
   (( fail == 0 )) || die "some checks failed"
 }
 
