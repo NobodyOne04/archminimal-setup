@@ -9,7 +9,7 @@
 #   repos     clone missing repos into $PROJECTS, fast-forward existing ones
 #   zsh       shell (zsh repo: deps, link, login shell)
 #   nvim      editor (nvim repo: tools, link, plugins, language servers)
-#   desktop   Hyprland desktop: bar, launcher, lock, Ghostty (Arch only)
+#   desktop   Hyprland desktop: bar, launcher, lock, kitty (Arch only)
 #   greeter   login screen: greetd + Quickshell greeter; replaces the active
 #             display manager, e.g. SDDM (Arch only)
 #   all       doctor base repos zsh nvim desktop greeter

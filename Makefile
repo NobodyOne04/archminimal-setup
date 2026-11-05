@@ -20,7 +20,7 @@ zsh: ## Shell: tools, ~/.zshrc link, login shell
 	@$(SETUP) zsh
 nvim: ## Editor: tools, ~/.config/nvim link, plugins, language servers
 	@$(SETUP) nvim
-desktop: ## Hyprland desktop: bar, launcher, lock, Ghostty (Arch)
+desktop: ## Hyprland desktop: bar, launcher, lock, kitty (Arch)
 	@$(SETUP) desktop
 greeter: ## Login screen only: greetd + Quickshell, replaces SDDM/any display manager (Arch)
 	@$(SETUP) greeter

@@ -7,7 +7,7 @@ editor parts on macOS). It clones the component repos and runs each one's own in
 |---|---|---|---|
 | [`zsh`](https://github.com/NobodyOne04/zsh) | fast zsh with p10k prompt, fzf, devops helpers | ✓ | ✓ |
 | [`nvim`](https://github.com/NobodyOne04/nvim) | Neovim: LSP, treesitter, telescope, completion, Copilot | ✓ | ✓ |
-| [`hyprland`](https://github.com/NobodyOne04/hyprland) | Hyprland desktop: bar, launcher, lock, idle, Ghostty | ✓ | |
+| [`hyprland`](https://github.com/NobodyOne04/hyprland) | Hyprland desktop: bar, launcher, lock, idle, kitty | ✓ | |
 | [`sddm-login`](https://github.com/NobodyOne04/sddm-login) | login screen: greetd + Quickshell greeter (no SDDM) | ✓ | |
 
 ## Fresh Arch install
