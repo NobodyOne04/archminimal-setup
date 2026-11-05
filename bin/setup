@@ -1,0 +1,250 @@
+#!/usr/bin/env bash
+# linux_setup: one entry point for the archminimal setup.
+#
+#   setup [--dry-run] [--yes] <command>
+#
+# Commands (in the order `all` runs them):
+#   doctor    check system, tools, GitHub access; print the plan
+#   base      base packages (git, make, base-devel/Xcode tools, openssh)
+#   repos     clone missing repos into $PROJECTS, fast-forward existing ones
+#   zsh       shell (zsh repo: deps, link, login shell)
+#   nvim      editor (nvim repo: tools, link, plugins, language servers)
+#   desktop   Hyprland desktop: bar, launcher, lock, Ghostty (Arch only)
+#   all       doctor base repos zsh nvim desktop
+#   greeter   login screen: greetd + archminimal greeter, replaces SDDM (Arch only; asks first)
+#   status    branch / changes / links for every repo
+#   update    pull every repo, then update plugins
+#   check     run each repo's own checks
+#   ssh-key   create an SSH key (if none) and show how to add it to GitHub
+set -euo pipefail
+
+PROJECTS=${PROJECTS:-$HOME/projects}
+GIT_BASE=${GIT_BASE:-git@github.com:NobodyOne04}
+REPOS=(zsh nvim hyprland sddm-login)
+
+DRY_RUN=0 YES=0
+OS=linux; [[ $OSTYPE == darwin* ]] && OS=mac
+IS_ARCH=0; command -v pacman >/dev/null 2>&1 && IS_ARCH=1
+
+# ---------- output ----------
+if [[ -t 1 ]]; then C=$'\e[38;2;0;229;255m' M=$'\e[38;2;125;128;136m' R=$'\e[38;2;255;42;109m' G=$'\e[38;2;158;206;106m' B=$'\e[1m' N=$'\e[0m'
+else C='' M='' R='' G='' B='' N=''; fi
+step() { printf '\n%s› %s%s\n' "$C$B" "$*" "$N"; }
+info() { printf '  %s%s%s\n' "$M" "$*" "$N"; }
+ok()   { printf '  %s✓%s %s\n' "$G" "$N" "$*"; }
+warn() { printf '  %s!%s %s\n' "$R" "$N" "$*"; }
+die()  { printf '%s✗ %s%s\n' "$R" "$*" "$N" >&2; exit 1; }
+
+# run: print the command, then execute it (or only print it with --dry-run)
+run() {
+  printf '  %s$ %s%s\n' "$M" "$*" "$N"
+  (( DRY_RUN )) || "$@"
+}
+
+confirm() {
+  (( YES || DRY_RUN )) && return 0
+  local reply; read -r -p "  $1 [y/N] " reply
+  [[ $reply == [yY]* ]]
+}
+
+need_arch() { (( IS_ARCH )) || die "'$1' needs Arch Linux (pacman); this is $OS."; }
+
+# Where a repo lives: an existing clone anywhere in $PROJECTS whose origin
+# matches (so differently named folders are reused), else $PROJECTS/<name>.
+repo_dir() {
+  local name=$1 d url
+  for d in "$PROJECTS"/*/; do
+    url=$(git -C "$d" remote get-url origin 2>/dev/null) || continue
+    [[ ${url%.git} == */$name ]] && { echo "${d%/}"; return; }
+  done
+  echo "$PROJECTS/$name"
+}
+
+repo_url() { echo "$GIT_BASE/$1.git"; }
+
+require_repo() {
+  local d; d=$(repo_dir "$1")
+  [[ -d $d/.git ]] || (( DRY_RUN )) || die "$1 is not cloned yet: run 'setup repos' first."
+  echo "$d"
+}
+
+# ---------- commands ----------
+cmd_doctor() {
+  step "doctor"
+  info "os: $OS$( (( IS_ARCH )) && echo ' (Arch)')   projects: $PROJECTS   repos: $GIT_BASE"
+  local t missing=0
+  for t in git make curl ssh; do
+    if command -v "$t" >/dev/null; then ok "$t"; else warn "$t missing (setup base installs it)"; missing=1; fi
+  done
+  if [[ $GIT_BASE == git@github.com:* ]]; then
+    # `ssh -T` exits 1 even on success, so match the message instead of the status
+    local reply; reply=$(ssh -o BatchMode=yes -o ConnectTimeout=8 -T git@github.com 2>&1 || true)
+    if [[ $reply == *"successfully authenticated"* ]]; then
+      ok "GitHub SSH access"
+    else
+      warn "no GitHub SSH access: the repos are private. Run 'setup ssh-key' and add the key to GitHub."
+      missing=1
+    fi
+  fi
+  if [[ $OS == linux ]] && ! (( IS_ARCH )); then warn "not Arch: zsh and nvim work, desktop and greeter do not"; fi
+  local r; for r in "${REPOS[@]}"; do
+    local d; d=$(repo_dir "$r")
+    if [[ -d $d/.git ]]; then ok "$r → ${d/#$HOME/\~}"; else info "$r → will clone into ${d/#$HOME/\~}"; fi
+  done
+  (( missing == 0 )) || info "fix the items marked ! before 'setup all' (or run 'setup base' first)"
+}
+
+cmd_base() {
+  step "base packages"
+  if (( IS_ARCH )); then
+    run sudo pacman -Syu --needed git make base-devel openssh curl
+  elif [[ $OS == mac ]]; then
+    xcode-select -p >/dev/null 2>&1 || run xcode-select --install
+    command -v brew >/dev/null || die "install Homebrew first: https://brew.sh"
+    run brew install git make curl
+  else
+    die "unsupported system: install git, make, curl and openssh yourself"
+  fi
+}
+
+cmd_repos() {
+  step "repositories"
+  run mkdir -p "$PROJECTS"
+  local r d
+  for r in "${REPOS[@]}"; do
+    d=$(repo_dir "$r")
+    if [[ -d $d/.git ]]; then
+      if [[ -n $(git -C "$d" status --porcelain) ]]; then
+        warn "$r: local changes, not pulling (${d/#$HOME/\~})"
+      else
+        run git -C "$d" pull --ff-only --quiet && ok "$r up to date"
+      fi
+    else
+      run git clone --quiet "$(repo_url "$r")" "$d" && ok "$r cloned"
+    fi
+  done
+}
+
+cmd_zsh() {
+  step "zsh"
+  local d; d=$(require_repo zsh)
+  run make -C "$d" install
+  if [[ $OS == linux && $(getent passwd "$USER" | cut -d: -f7) != */zsh ]]; then
+    run make -C "$d" chsh
+  fi
+}
+
+cmd_nvim() {
+  step "nvim"
+  local d; d=$(require_repo nvim)
+  run make -C "$d" install
+}
+
+cmd_desktop() {
+  step "desktop (Hyprland)"
+  need_arch desktop
+  local d; d=$(require_repo hyprland)
+  run make -C "$d" deps
+  run make -C "$d" install
+  info "log in to Hyprland (or run 'make -C ${d/#$HOME/\~} reload' inside it)"
+}
+
+cmd_greeter() {
+  step "login screen (greetd + archminimal greeter)"
+  need_arch greeter
+  local d; d=$(require_repo sddm-login)/greetd
+  info "this replaces your login manager (SDDM → greetd) from the next boot."
+  info "undo any time with: sudo make -C ${d/#$HOME/\~} revert"
+  confirm "continue?" || { info "skipped"; return 0; }
+  run make -C "$d" deps
+  run make -C "$d" check
+  run sudo make -C "$d" install
+  run sudo make -C "$d" enable
+}
+
+cmd_all() {
+  cmd_doctor
+  cmd_base
+  cmd_repos
+  cmd_zsh
+  cmd_nvim
+  if (( IS_ARCH )); then cmd_desktop; else info "skipping desktop (Arch only)"; fi
+  step "done"
+  info "open a new terminal for zsh; reboot or log in to Hyprland for the desktop."
+  (( IS_ARCH )) && info "optional login screen: setup greeter"
+  return 0
+}
+
+cmd_status() {
+  local r d
+  for r in "${REPOS[@]}"; do
+    d=$(repo_dir "$r")
+    step "$r"
+    if [[ ! -d $d/.git ]]; then info "not cloned"; continue; fi
+    git -C "$d" fetch --quiet 2>/dev/null || true
+    info "$(git -C "$d" status -sb | head -1)   ${d/#$HOME/\~}"
+    local changes; changes=$(git -C "$d" status --porcelain | wc -l | tr -d ' ')
+    (( changes == 0 )) || warn "$changes uncommitted change(s)"
+    case $r in
+      zsh)
+        if [[ $(readlink "$HOME/.zshrc" 2>/dev/null) == "$d/zshrc" ]]; then ok "linked: ~/.zshrc"; else info "not linked: ~/.zshrc"; fi ;;
+      nvim)
+        if [[ $(readlink "$HOME/.config/nvim" 2>/dev/null) == "$d" ]]; then ok "linked: ~/.config/nvim"; else info "not linked: ~/.config/nvim"; fi ;;
+      hyprland)   [[ -x $d/bin/links.sh ]] && "$d/bin/links.sh" status | sed 's/^/  /' ;;
+      sddm-login) if (( IS_ARCH )); then make -s -C "$d/greetd" status 2>/dev/null | sed 's/^/  /'; fi ;;
+    esac
+  done
+  return 0
+}
+
+cmd_update() {
+  cmd_repos
+  step "plugins"
+  local d
+  d=$(repo_dir nvim); [[ -d $d/.git ]] && run make -C "$d" sync
+  d=$(repo_dir zsh);  [[ -d $d/.git ]] && run make -C "$d" update
+  return 0
+}
+
+cmd_check() {
+  local d fail=0
+  d=$(repo_dir zsh);        [[ -d $d ]] && { step "zsh";        run make -s -C "$d" check || fail=1; }
+  d=$(repo_dir nvim);       [[ -d $d ]] && { step "nvim";       run make -s -C "$d" check || fail=1; }
+  d=$(repo_dir hyprland);   [[ -d $d ]] && { step "hyprland";   run make -s -C "$d" lint  || fail=1; }
+  d=$(repo_dir sddm-login); [[ -d $d ]] && { step "sddm-login"; run make -s -C "$d/greetd" lint || fail=1; }
+  (( fail == 0 )) || die "some checks failed"
+}
+
+cmd_ssh_key() {
+  step "GitHub SSH key"
+  local key=$HOME/.ssh/id_ed25519
+  if [[ ! -f $key ]]; then
+    run ssh-keygen -t ed25519 -C "$USER@$(hostname)" -f "$key"
+  else
+    ok "key exists: $key"
+  fi
+  (( DRY_RUN )) && return 0
+  info "add this public key at https://github.com/settings/ssh/new :"
+  echo; cat "$key.pub"; echo
+  info "then check with: ssh -T git@github.com"
+}
+
+usage() { sed -n '2,22p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+
+# ---------- main ----------
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --dry-run|-n) DRY_RUN=1 ;;
+    --yes|-y) YES=1 ;;
+    -h|--help|help) usage; exit 0 ;;
+    -*) die "unknown option: $1" ;;
+    *) break ;;
+  esac
+  shift
+done
+cmd=${1:-}; [[ -n $cmd ]] || { usage; exit 2; }
+case $cmd in
+  doctor|base|repos|zsh|nvim|desktop|greeter|all|status|update|check) "cmd_$cmd" ;;
+  ssh-key) cmd_ssh_key ;;
+  *) usage; die "unknown command: $cmd" ;;
+esac
