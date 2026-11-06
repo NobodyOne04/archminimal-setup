@@ -10,6 +10,14 @@ editor parts on macOS). It clones the component repos and runs each one's own in
 | [`hyprland`](https://github.com/NobodyOne04/hyprland) | Hyprland desktop: bar, launcher, lock, idle, kitty | ✓ | |
 | [`sddm-login`](https://github.com/NobodyOne04/sddm-login) | login screen: greetd + Quickshell greeter (no SDDM) | ✓ | |
 
+Plus the toolchains, installed by `bin/setup` itself:
+
+| Step | What it installs | Arch | macOS |
+|---|---|---|---|
+| `python` | Python + [uv](https://docs.astral.sh/uv/) (projects, venvs, CLI tools, other Python versions) | pacman | brew |
+| `go` | Go (`GOPATH` is `~/go`; `~/go/bin` is on PATH via the zsh repo) | pacman | brew |
+| `claude` | [Claude Code](https://code.claude.com/docs/en/setup) CLI, official installer, updates itself | ✓ | ✓ |
+
 ## Fresh Arch install
 
 From a TTY on a freshly installed Arch (with a user that has sudo):
@@ -22,7 +30,7 @@ ssh-keygen -t ed25519 && cat ~/.ssh/id_ed25519.pub   # add it at https://github.
 git clone git@github.com:NobodyOne04/linux_setup.git ~/projects/linux_setup
 cd ~/projects/linux_setup
 make doctor     # checks tools and GitHub access, shows the plan
-make all        # base packages, repos, zsh, nvim, desktop, login screen
+make all        # base packages, repos, zsh, python, go, nvim, claude, desktop, login screen
 reboot          # the archminimal login screen starts Hyprland
 ```
 
@@ -33,10 +41,10 @@ every command without running it, e.g. `make all DRY_RUN=1`.
 
 | Command | What |
 |---|---|
-| `make status` | each repo's branch, unpushed or uncommitted work, and whether its links are in place |
+| `make status` | each repo's branch, unpushed or uncommitted work, whether its links are in place; tool versions |
 | `make update` | pull every repo (fast-forward only; repos with local changes are left alone), update plugins |
 | `make check` | run each repo's own checks (zsh startup, nvim startup, Hyprland and greeter lint) |
-| `make zsh` / `nvim` / `desktop` | (re)install one part |
+| `make zsh` / `python` / `go` / `nvim` / `claude` / `desktop` | (re)install one part |
 | `make ssh-key` | create a key if missing and show where to add it |
 
 ## How it works
@@ -57,8 +65,12 @@ every command without running it, e.g. `make all DRY_RUN=1`.
 2. **base**: `pacman -Syu --needed git make base-devel openssh curl`
 3. **repos**: clone or fast-forward `zsh`, `nvim`, `hyprland`, `sddm-login`
 4. **zsh**: tools, link `~/.zshrc`, make zsh the login shell
-5. **nvim**: tools, link `~/.config/nvim`, plugins at locked versions, language servers
-6. **desktop**: Hyprland packages, Bluetooth and power-profile services, config links
-7. **greeter**: greetd + the Quickshell login screen. It takes over from whatever display manager is active
+5. **python**: `pacman -S --needed python uv`
+6. **go**: `pacman -S --needed go` (before nvim: its language servers such as gopls are built with it)
+7. **nvim**: tools, link `~/.config/nvim`, plugins at locked versions, language servers
+8. **claude**: Claude Code via Anthropic's installer into `~/.local/bin/claude`; skipped if already installed.
+   It updates itself; run `claude` in a project folder and log in in the browser the first time
+9. **desktop**: Hyprland packages, Bluetooth and power-profile services, config links
+10. **greeter**: greetd + the Quickshell login screen. It takes over from whatever display manager is active
    (archinstall's Hyprland profile installs SDDM) and records it, so `sudo make -C ~/projects/sddm-login revert`
    can undo it. To uninstall SDDM entirely afterwards: `sudo make -C ~/projects/sddm-login remove-sddm`.

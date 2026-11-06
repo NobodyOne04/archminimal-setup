@@ -8,12 +8,15 @@
 #   base      base packages (git, make, base-devel/Xcode tools, openssh)
 #   repos     clone missing repos into $PROJECTS, fast-forward existing ones
 #   zsh       shell (zsh repo: deps, link, login shell)
+#   python    Python + uv (projects, venvs, CLI tools, other Python versions)
+#   go        Go toolchain (GOPATH ~/go; ~/go/bin is on PATH via the zsh repo)
 #   nvim      editor (nvim repo: tools, link, plugins, language servers)
+#   claude    Claude Code CLI (official installer; it updates itself)
 #   desktop   Hyprland desktop: bar, launcher, lock, kitty (Arch only)
 #   greeter   login screen: greetd + Quickshell greeter; replaces the active
 #             display manager, e.g. SDDM (Arch only)
-#   all       doctor base repos zsh nvim desktop greeter
-#   status    branch / changes / links for every repo
+#   all       doctor base repos zsh python go nvim claude desktop greeter
+#   status    branch / changes / links for every repo, tool versions
 #   update    pull every repo, then update plugins
 #   check     run each repo's own checks
 #   ssh-key   create an SSH key (if none) and show how to add it to GitHub
@@ -69,6 +72,17 @@ require_repo() {
   echo "$d"
 }
 
+# Version line of an installed tool, or failure. claude may only be in
+# ~/.local/bin (where its installer puts it) until a new shell updates PATH.
+tool_version() {
+  local t=$1 bin
+  bin=$(command -v "$t" 2>/dev/null) || { [[ -x $HOME/.local/bin/$t ]] && bin=$HOME/.local/bin/$t; } || return 1
+  case $t in
+    go) "$bin" version 2>/dev/null | awk '{print $3}' ;;
+    *)  "$bin" --version 2>/dev/null | head -n 1 ;;
+  esac
+}
+
 # ---------- commands ----------
 cmd_doctor() {
   step "doctor"
@@ -91,6 +105,10 @@ cmd_doctor() {
   local r; for r in "${REPOS[@]}"; do
     local d; d=$(repo_dir "$r")
     if [[ -d $d/.git ]]; then ok "$r → ${d/#$HOME/\~}"; else info "$r → will clone into ${d/#$HOME/\~}"; fi
+  done
+  local pair v
+  for pair in python3:python uv:python go:go claude:claude; do
+    if v=$(tool_version "${pair%%:*}"); then ok "$v"; else info "${pair%%:*} → 'setup ${pair#*:}' installs it"; fi
   done
   (( missing == 0 )) || info "fix the items marked ! before 'setup all' (or run 'setup base' first)"
 }
@@ -135,10 +153,63 @@ cmd_zsh() {
   fi
 }
 
+cmd_python() {
+  step "python + uv"
+  if (( IS_ARCH )); then
+    run sudo pacman -S --needed python uv
+  elif [[ $OS == mac ]]; then
+    run brew install python uv
+  else
+    warn "not Arch or macOS: install python3 and uv (https://docs.astral.sh/uv/) yourself"; return 0
+  fi
+  (( DRY_RUN )) && return 0
+  ok "$(tool_version python3), $(tool_version uv)"
+  info "projects: uv init, uv add <pkg>, uv run   venv in this folder: venv   CLI tools: uv tool install <pkg>"
+}
+
+cmd_go() {
+  step "go"
+  if (( IS_ARCH )); then
+    run sudo pacman -S --needed go
+  elif [[ $OS == mac ]]; then
+    run brew install go
+  else
+    warn "not Arch or macOS: install Go from https://go.dev/dl/ yourself"; return 0
+  fi
+  (( DRY_RUN )) && return 0
+  ok "$(tool_version go)"
+  info "GOPATH is ~/go; 'go install <pkg>@latest' puts tools in ~/go/bin, which the zsh repo adds to PATH"
+}
+
 cmd_nvim() {
   step "nvim"
   local d; d=$(require_repo nvim)
   run make -C "$d" install
+}
+
+cmd_claude() {
+  step "Claude Code"
+  local v
+  if v=$(tool_version claude); then
+    ok "already installed: $v (it updates itself; 'claude update' updates now)"
+    return 0
+  fi
+  # Anthropic's native installer (https://code.claude.com/docs/en/setup): puts
+  # the launcher in ~/.local/bin/claude and keeps itself up to date. Saved to a
+  # file first, so a failed download stops here instead of running half a script.
+  local installer; installer=$(mktemp)
+  run curl -fsSL https://claude.ai/install.sh -o "$installer" || { rm -f "$installer"; die "could not download the Claude Code installer"; }
+  run bash "$installer" || { rm -f "$installer"; die "the Claude Code installer failed"; }
+  rm -f "$installer"
+  (( DRY_RUN )) && return 0
+  v=$(tool_version claude) || die "claude is not in ~/.local/bin after installing"
+  ok "$v"
+  if [[ :$PATH: != *":$HOME/.local/bin:"* ]]; then
+    # ~/.zshrc is a link into the zsh repo: appending to it would edit the repo
+    info "ignore the installer's PATH note: the zsh repo already puts ~/.local/bin on PATH."
+    info "just open a new terminal; do not append anything to ~/.zshrc"
+  fi
+  info "start it in a project folder: claude   (the first run opens the browser to log in)"
 }
 
 cmd_desktop() {
@@ -167,7 +238,10 @@ cmd_all() {
   cmd_base
   cmd_repos
   cmd_zsh
+  cmd_python
+  cmd_go          # before nvim: its language servers (gopls, python tools) build with these
   cmd_nvim
+  cmd_claude
   if (( IS_ARCH )); then
     cmd_desktop
     cmd_greeter
@@ -197,6 +271,11 @@ cmd_status() {
       hyprland)   [[ -x $d/bin/links.sh ]] && "$d/bin/links.sh" status | sed 's/^/  /' ;;
       sddm-login) if (( IS_ARCH )); then make -s -C "$d" status 2>/dev/null; fi ;;
     esac
+  done
+  step "tools"
+  local t v
+  for t in python3 uv go claude; do
+    if v=$(tool_version "$t"); then ok "$v"; else info "$t: not installed"; fi
   done
   return 0
 }
@@ -233,7 +312,8 @@ cmd_ssh_key() {
   info "then check with: ssh -T git@github.com"
 }
 
-usage() { sed -n '2,22p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+# the comment block at the top of this file, whatever its length
+usage() { awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "${BASH_SOURCE[0]}"; }
 
 # ---------- main ----------
 while [[ $# -gt 0 ]]; do
@@ -248,7 +328,7 @@ while [[ $# -gt 0 ]]; do
 done
 cmd=${1:-}; [[ -n $cmd ]] || { usage; exit 2; }
 case $cmd in
-  doctor|base|repos|zsh|nvim|desktop|greeter|all|status|update|check) "cmd_$cmd" ;;
+  doctor|base|repos|zsh|python|go|nvim|claude|desktop|greeter|all|status|update|check) "cmd_$cmd" ;;
   ssh-key) cmd_ssh_key ;;
   *) usage; die "unknown command: $cmd" ;;
 esac
