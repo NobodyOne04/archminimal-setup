@@ -6,8 +6,10 @@
 # Commands (in the order `all` runs them):
 #   doctor    check system, tools, GitHub access; print the plan
 #   base      base packages (git, make, base-devel/Xcode tools, openssh)
+#   packages  macOS: install everything in the Brewfile (brew bundle)
 #   repos     clone missing repos into $PROJECTS, fast-forward existing ones
 #   zsh       shell (zsh repo: deps, link, login shell)
+#   tmux      tmux (tmux repo: deps, link ~/.config/tmux, plugins)
 #   python    Python + uv (projects, venvs, CLI tools, other Python versions)
 #   go        Go toolchain (GOPATH ~/go; ~/go/bin is on PATH via the zsh repo)
 #   nvim      editor (nvim repo: tools, link, plugins, language servers)
@@ -15,16 +17,18 @@
 #   desktop   Hyprland desktop: bar, launcher, lock, kitty (Arch only)
 #   greeter   login screen: greetd + Quickshell greeter; replaces the active
 #             display manager, e.g. SDDM (Arch only)
-#   all       doctor base repos zsh python go nvim claude desktop greeter
+#   all       doctor base [packages] repos zsh tmux python go nvim claude desktop greeter
 #   status    branch / changes / links for every repo, tool versions
 #   update    pull every repo, then update plugins
 #   check     run each repo's own checks
+#   packages-check  macOS: list packages installed but not in the Brewfile
+#   packages-clean  macOS: uninstall those (asks first)
 #   ssh-key   create an SSH key (if none) and show how to add it to GitHub
 set -euo pipefail
 
 PROJECTS=${PROJECTS:-$HOME/projects}
 GIT_BASE=${GIT_BASE:-git@github.com:NobodyOne04}
-REPOS=(zsh nvim hyprland sddm-login)
+REPOS=(zsh tmux nvim hyprland sddm-login)
 
 DRY_RUN=0 YES=0
 OS=linux; [[ $OSTYPE == darwin* ]] && OS=mac
@@ -126,6 +130,35 @@ cmd_base() {
   fi
 }
 
+# ---------- Brewfile (macOS) ----------
+BREWFILE=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/Brewfile
+
+need_mac_brew() {
+  [[ $OS == mac ]] || { info "$1: macOS only (on Arch each repo installs its own packages)"; return 1; }
+  command -v brew >/dev/null || die "install Homebrew first: https://brew.sh"
+}
+
+cmd_packages() {
+  step "packages (Brewfile)"
+  need_mac_brew packages || return 0
+  run brew bundle install --file="$BREWFILE" --no-upgrade
+}
+
+cmd_packages_check() {
+  step "packages not in the Brewfile"
+  need_mac_brew packages-check || return 0
+  local extra; extra=$(brew bundle cleanup --file="$BREWFILE" 2>/dev/null | grep -vE '^(Run|==>|Would )' || true)
+  if [[ -z $extra ]]; then ok "everything installed is in the Brewfile"
+  else printf '%s\n' "$extra" | sed 's/^/  /'; info "keep one? add it to the Brewfile with a comment. remove them: make packages-clean"; fi
+  brew bundle check --file="$BREWFILE" --no-upgrade >/dev/null 2>&1 && ok "nothing from the Brewfile is missing" || warn "some Brewfile packages are missing: make packages"
+}
+
+cmd_packages_clean() {
+  cmd_packages_check
+  [[ $OS == mac ]] || return 0
+  confirm "uninstall the packages listed above?" && run brew bundle cleanup --file="$BREWFILE" --force
+}
+
 cmd_repos() {
   step "repositories"
   run mkdir -p "$PROJECTS"
@@ -151,6 +184,12 @@ cmd_zsh() {
   if [[ $OS == linux && $(getent passwd "$USER" | cut -d: -f7) != */zsh ]]; then
     run make -C "$d" chsh
   fi
+}
+
+cmd_tmux() {
+  step "tmux"
+  local d; d=$(require_repo tmux)
+  run make -C "$d" install
 }
 
 cmd_python() {
@@ -236,8 +275,10 @@ cmd_greeter() {
 cmd_all() {
   cmd_doctor
   cmd_base
+  [[ $OS == mac ]] && cmd_packages
   cmd_repos
   cmd_zsh
+  cmd_tmux
   cmd_python
   cmd_go          # before nvim: its language servers (gopls, python tools) build with these
   cmd_nvim
@@ -265,7 +306,9 @@ cmd_status() {
     (( changes == 0 )) || warn "$changes uncommitted change(s)"
     case $r in
       zsh)
-        if [[ $(readlink "$HOME/.zshrc" 2>/dev/null) == "$d/zshrc" ]]; then ok "linked: ~/.zshrc"; else info "not linked: ~/.zshrc"; fi ;;
+        [[ -x $d/scripts/link.sh ]] && "$d/scripts/link.sh" status | sed 's/^/  /' ;;
+      tmux)
+        [[ -x $d/scripts/link.sh ]] && "$d/scripts/link.sh" status | sed 's/^/  /' ;;
       nvim)
         if [[ $(readlink "$HOME/.config/nvim" 2>/dev/null) == "$d" ]]; then ok "linked: ~/.config/nvim"; else info "not linked: ~/.config/nvim"; fi ;;
       hyprland)   [[ -x $d/bin/links.sh ]] && "$d/bin/links.sh" status | sed 's/^/  /' ;;
@@ -286,12 +329,14 @@ cmd_update() {
   local d
   d=$(repo_dir nvim); [[ -d $d/.git ]] && run make -C "$d" sync
   d=$(repo_dir zsh);  [[ -d $d/.git ]] && run make -C "$d" update
+  d=$(repo_dir tmux); [[ -d $d/.git ]] && run make -C "$d" update
   return 0
 }
 
 cmd_check() {
   local d fail=0
   d=$(repo_dir zsh);        [[ -d $d ]] && { step "zsh";        run make -s -C "$d" check || fail=1; }
+  d=$(repo_dir tmux);       [[ -d $d ]] && { step "tmux";       run make -s -C "$d" check || fail=1; }
   d=$(repo_dir nvim);       [[ -d $d ]] && { step "nvim";       run make -s -C "$d" check || fail=1; }
   d=$(repo_dir hyprland);   [[ -d $d ]] && { step "hyprland";   run make -s -C "$d" lint  || fail=1; }
   d=$(repo_dir sddm-login); [[ -d $d ]] && { step "sddm-login"; run make -s -C "$d" lint || fail=1; }
@@ -328,7 +373,10 @@ while [[ $# -gt 0 ]]; do
 done
 cmd=${1:-}; [[ -n $cmd ]] || { usage; exit 2; }
 case $cmd in
-  doctor|base|repos|zsh|python|go|nvim|claude|desktop|greeter|all|status|update|check) "cmd_$cmd" ;;
+  doctor|base|repos|zsh|tmux|python|go|nvim|claude|desktop|greeter|all|status|update|check) "cmd_$cmd" ;;
   ssh-key) cmd_ssh_key ;;
+  packages) cmd_packages ;;
+  packages-check) cmd_packages_check ;;
+  packages-clean) cmd_packages_clean ;;
   *) usage; die "unknown command: $cmd" ;;
 esac

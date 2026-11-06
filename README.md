@@ -6,6 +6,7 @@ editor parts on macOS). It clones the component repos and runs each one's own in
 | Repo | What it sets up | Arch | macOS |
 |---|---|---|---|
 | [`zsh`](https://github.com/NobodyOne04/zsh) | fast zsh with p10k prompt, fzf, devops helpers | ✓ | ✓ |
+| [`tmux`](https://github.com/NobodyOne04/tmux) | tmux: Alt-key navigation shared with nvim, project sessions, popups, sessions that survive reboots | ✓ | ✓ |
 | [`nvim`](https://github.com/NobodyOne04/nvim) | Neovim: LSP, treesitter, telescope, completion, Copilot | ✓ | ✓ |
 | [`hyprland`](https://github.com/NobodyOne04/hyprland) | Hyprland desktop: bar, launcher, lock, idle, kitty | ✓ | |
 | [`sddm-login`](https://github.com/NobodyOne04/sddm-login) | login screen: greetd + Quickshell greeter (no SDDM) | ✓ | |
@@ -44,8 +45,10 @@ every command without running it, e.g. `make all DRY_RUN=1`.
 | `make status` | each repo's branch, unpushed or uncommitted work, whether its links are in place; tool versions |
 | `make update` | pull every repo (fast-forward only; repos with local changes are left alone), update plugins |
 | `make check` | run each repo's own checks (zsh startup, nvim startup, Hyprland and greeter lint) |
-| `make zsh` / `python` / `go` / `nvim` / `claude` / `desktop` | (re)install one part |
+| `make zsh` / `tmux` / `python` / `go` / `nvim` / `claude` / `desktop` | (re)install one part |
 | `make ssh-key` | create a key if missing and show where to add it |
+| `make packages` | macOS: install everything in the `Brewfile` |
+| `make packages-check` / `packages-clean` | macOS: list / remove packages that are installed but not in the `Brewfile` |
 
 ## How it works
 
@@ -65,6 +68,7 @@ every command without running it, e.g. `make all DRY_RUN=1`.
 2. **base**: `pacman -Syu --needed git make base-devel openssh curl`
 3. **repos**: clone or fast-forward `zsh`, `nvim`, `hyprland`, `sddm-login`
 4. **zsh**: tools, link `~/.zshrc`, make zsh the login shell
+   **tmux**: tools, link `~/.config/tmux`, plugins
 5. **python**: `pacman -S --needed python uv`
 6. **go**: `pacman -S --needed go` (before nvim: its language servers such as gopls are built with it)
 7. **nvim**: tools, link `~/.config/nvim`, plugins at locked versions, language servers

@@ -3,21 +3,29 @@
 
 SETUP := ./bin/setup $(if $(DRY_RUN),--dry-run) $(if $(YES),--yes)
 .DEFAULT_GOAL := help
-.PHONY: help all doctor base repos zsh python go nvim claude desktop greeter status update check ssh-key
+.PHONY: help all tmux doctor base packages packages-check packages-clean repos zsh python go nvim claude desktop greeter status update check ssh-key
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ {printf "  \033[36m%-8s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-all: ## Everything: doctor, base, repos, zsh, python, go, nvim, claude, desktop, login screen
+all: ## Everything: doctor, base, repos, zsh, tmux, python, go, nvim, claude, desktop, login screen
 	@$(SETUP) all
 doctor: ## Check system, tools and GitHub access; show the plan
 	@$(SETUP) doctor
 base: ## Base packages (git, make, base-devel, openssh)
 	@$(SETUP) base
+packages: ## macOS: install everything in the Brewfile
+	@$(SETUP) packages
+packages-check: ## macOS: list packages installed but not in the Brewfile
+	@$(SETUP) packages-check
+packages-clean: ## macOS: uninstall packages not in the Brewfile (asks first)
+	@$(SETUP) packages-clean
 repos: ## Clone missing repos into ~/projects, fast-forward the rest
 	@$(SETUP) repos
 zsh: ## Shell: tools, ~/.zshrc link, login shell
 	@$(SETUP) zsh
+tmux: ## tmux: tools, ~/.config/tmux link, plugins
+	@$(SETUP) tmux
 python: ## Python + uv (projects, venvs, CLI tools)
 	@$(SETUP) python
 go: ## Go toolchain (GOPATH ~/go, ~/go/bin on PATH)
