@@ -1,0 +1,21 @@
+# 0005. macOS packages declared in a commented Brewfile
+
+- Status: Accepted
+- Date: 2026-11-07
+
+Everything the Mac has from Homebrew is listed in `Brewfile` with a comment saying what needs it, so
+nothing stays installed for an unknown reason. On Arch each component repo installs its own packages.
+
+## Technical details
+- **Problem**: bare `brew install`s piled up with no record of why.
+- **`Brewfile`**: grouped (shell, secrets, editor, languages, containers, network), one comment per
+  package that isn't obvious.
+- **Commands**: `make packages` (`brew bundle install --no-upgrade`), `make packages-check` (installed
+  but not in the Brewfile, via `brew bundle cleanup`), `make packages-clean` (uninstall those, asks
+  first).
+- **Arch**: no equivalent list here; each repo's `make deps` / installer uses pacman.
+- **Consequences**: add a package to the Brewfile instead of installing it by hand.
+
+## Technologies and alternatives
+- Involved: Homebrew `brew bundle`.
+- Alternatives: not recorded at the time.

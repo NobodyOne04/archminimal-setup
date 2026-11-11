@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Added
+- Decision records in `docs/adr/`: six ADRs for the repo's existing decisions
+
 ### Changed
 - Renamed `linux_setup` → `archminimal-setup`, and the desktop repo `hyprland` → `archminimal-hypr` (both renamed
   on GitHub: history kept, old URLs redirect). `setup repos` finds an old `hyprland` clone and points its origin

@@ -1,0 +1,18 @@
+# 0006. Claude Code through Anthropic's own installer
+
+- Status: Accepted
+- Date: 2026-11-06
+
+`setup claude` installs the Claude Code CLI with Anthropic's native installer, which puts it in
+`~/.local/bin/claude` and keeps it up to date itself.
+
+## Technical details
+- **Skip**: if `claude` is already found (on PATH or in `~/.local/bin`), it only reports the version.
+- **Download first**: `curl -fsSL https://claude.ai/install.sh` into a `mktemp` file, then
+  `bash <file>`; a failed download stops there instead of running half a script.
+- **PATH**: the `zsh` repo already puts `~/.local/bin` on PATH; the installer's advice to append to
+  `~/.zshrc` is ignored on purpose, because `~/.zshrc` is a link into the zsh repo.
+- **Consequences**: no package-manager version to pin or update; first run logs in through the browser.
+
+## Technologies and alternatives
+- Alternatives: not recorded at the time.

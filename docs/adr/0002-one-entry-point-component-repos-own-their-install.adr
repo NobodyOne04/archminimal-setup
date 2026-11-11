@@ -1,0 +1,29 @@
+# 0002. One entry point; each component repo owns its installer
+
+- Status: Accepted
+- Date: 2026-11-05
+
+`archminimal-setup` only orders and calls the installers of the component repos (`zsh`, `tmux`,
+`nvim`, `archminimal-hypr`, `archminimal-greeter`); it holds no install logic of their own.
+
+## Technical details
+- **Problem**: a fresh Arch machine needs five repos set up in the right order, plus toolchains;
+  doing it by hand meant remembering the order and each repo's steps.
+- **Shape**: `bin/setup` (bash, `set -euo pipefail`) has one `cmd_<step>` function per step;
+  `Makefile` targets are thin wrappers with help text (`make <step>` → `bin/setup <step>`).
+  `REPOS=(zsh tmux nvim archminimal-hypr archminimal-greeter)` is the repo list.
+- **Components**: each step runs the component's own `Makefile` (`make -C <repo> install`,
+  `deps`, `enable`, …), so every repo also works on its own.
+- **Order of `all`**: doctor, base, (macOS: packages), repos, zsh, tmux, python, go, nvim, claude,
+  then on Arch only desktop and greeter. `go` comes before `nvim`: its language servers (gopls) build
+  with it. On macOS the desktop and greeter steps are skipped.
+- **Toolchains** with no repo of their own live here: `python` (python + uv), `go`, `claude`.
+- **Everyday**: `status` (branch, local changes, links, tool versions), `update` (fast-forward every
+  repo, then each repo's plugin update), `check` (each repo's own check or lint).
+- **Consequences**: changing a component's install means changing that repo, not this one. A new or
+  renamed component means updating `REPOS`, its `cmd_*`, `cmd_status`, `cmd_check` and the README
+  table together.
+
+## Technologies and alternatives
+- Involved: bash, make, git, pacman, Homebrew.
+- Alternatives: not recorded at the time.

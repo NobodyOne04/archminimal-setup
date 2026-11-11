@@ -1,0 +1,20 @@
+# 0004. Every command goes through run (dry-run) and confirm
+
+- Status: Accepted
+- Date: 2026-11-05
+
+The script runs `sudo`, `pacman`, `systemctl` and swaps the login manager on a fresh machine, so
+every command is printed before it runs, can be shown without running, and destructive ones ask.
+
+## Technical details
+- **`run`**: prints `$ <command>`, then executes it unless `--dry-run` (`-n`, or `DRY_RUN=1 make …`).
+- **`confirm`**: asks `[y/N]`; skipped with `--yes` (`YES=1`) and in dry-run. Used for destructive
+  steps such as `packages-clean`.
+- **Safe on macOS**: `DRY_RUN=1 make doctor`, `make status`.
+- **Guards**: `need_arch` refuses Arch-only steps elsewhere; `require_repo` refuses a step whose repo
+  isn't cloned yet; `doctor` checks tools and GitHub SSH access before `all`.
+- **Consequences**: `make all DRY_RUN=1` shows the whole plan. A new step must use `run`, never a bare
+  command, or dry-run lies.
+
+## Technologies and alternatives
+- Alternatives: not recorded at the time.

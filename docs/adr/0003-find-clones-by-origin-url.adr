@@ -1,0 +1,24 @@
+# 0003. Find existing clones by origin URL; follow GitHub renames
+
+- Status: Accepted
+- Date: 2026-11-11
+
+A repo already cloned anywhere in `$PROJECTS` is found by its `origin` URL, not its folder name, so
+it is reused and never cloned twice; repos renamed on GitHub are found under their old name too.
+
+## Technical details
+- **Problem**: clones made under another folder name, or before a repo was renamed on GitHub
+  (`hyprland` → `archminimal-hypr`, `linux_setup` → `archminimal-setup`), were not recognised.
+- **`repo_dir <name>`**: scans `$PROJECTS/*/` (default `~/projects`), compares
+  `git remote get-url origin` (without `.git`) against `*/<name>` or `*/<old_name>`; falls back to
+  `$PROJECTS/<name>`.
+- **`old_name`**: maps a current name to its pre-rename name (`archminimal-hypr` → `hyprland`).
+  `setup repos` re-points such a clone's origin with `git remote set-url` to `$GIT_BASE/<name>.git`.
+- **Copies are not renames**: `archminimal-greeter` is a copy of `sddm-login` in a fresh repo, with
+  unrelated history; it gets no `old_name` entry, because pulling the new repo into the old clone
+  would fail. The old folder is left for the user to remove.
+- **Pulling**: `git pull --ff-only`; a clone with local changes is warned about and left alone.
+- **Consequences**: folder names don't matter; a rename needs one line in `old_name`.
+
+## Technologies and alternatives
+- Alternatives: fixed paths (`~/projects/<name>`): breaks on any other folder name or a rename.
