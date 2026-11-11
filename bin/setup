@@ -28,7 +28,7 @@ set -euo pipefail
 
 PROJECTS=${PROJECTS:-$HOME/projects}
 GIT_BASE=${GIT_BASE:-git@github.com:NobodyOne04}
-REPOS=(zsh tmux nvim hyprland sddm-login)
+REPOS=(zsh tmux nvim hyprland archminimal-greeter)
 
 DRY_RUN=0 YES=0
 OS=linux; [[ $OSTYPE == darwin* ]] && OS=mac
@@ -263,7 +263,7 @@ cmd_desktop() {
 cmd_greeter() {
   step "login screen (greetd + Quickshell)"
   need_arch greeter
-  local d; d=$(require_repo sddm-login)
+  local d; d=$(require_repo archminimal-greeter)
   info "greetd replaces the active display manager (e.g. SDDM) from the next boot."
   info "undo: sudo make -C ${d/#$HOME/\~} revert   remove SDDM: sudo make -C ${d/#$HOME/\~} remove-sddm"
   run make -C "$d" deps
@@ -312,7 +312,7 @@ cmd_status() {
       nvim)
         if [[ $(readlink "$HOME/.config/nvim" 2>/dev/null) == "$d" ]]; then ok "linked: ~/.config/nvim"; else info "not linked: ~/.config/nvim"; fi ;;
       hyprland)   [[ -x $d/bin/links.sh ]] && "$d/bin/links.sh" status | sed 's/^/  /' ;;
-      sddm-login) if (( IS_ARCH )); then make -s -C "$d" status 2>/dev/null; fi ;;
+      archminimal-greeter) if (( IS_ARCH )); then make -s -C "$d" status 2>/dev/null; fi ;;
     esac
   done
   step "tools"
@@ -339,7 +339,7 @@ cmd_check() {
   d=$(repo_dir tmux);       [[ -d $d ]] && { step "tmux";       run make -s -C "$d" check || fail=1; }
   d=$(repo_dir nvim);       [[ -d $d ]] && { step "nvim";       run make -s -C "$d" check || fail=1; }
   d=$(repo_dir hyprland);   [[ -d $d ]] && { step "hyprland";   run make -s -C "$d" lint  || fail=1; }
-  d=$(repo_dir sddm-login); [[ -d $d ]] && { step "sddm-login"; run make -s -C "$d" lint || fail=1; }
+  d=$(repo_dir archminimal-greeter); [[ -d $d ]] && { step "archminimal-greeter"; run make -s -C "$d" lint || fail=1; }
   (( fail == 0 )) || die "some checks failed"
 }
 

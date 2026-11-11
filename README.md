@@ -9,7 +9,7 @@ editor parts on macOS). It clones the component repos and runs each one's own in
 | [`tmux`](https://github.com/NobodyOne04/tmux) | tmux: Alt-key navigation shared with nvim, project sessions, popups, sessions that survive reboots | ✓ | ✓ |
 | [`nvim`](https://github.com/NobodyOne04/nvim) | Neovim: LSP, treesitter, telescope, completion, Copilot | ✓ | ✓ |
 | [`hyprland`](https://github.com/NobodyOne04/hyprland) | Hyprland desktop: bar, launcher, lock, idle, kitty | ✓ | |
-| [`sddm-login`](https://github.com/NobodyOne04/sddm-login) | login screen: greetd + Quickshell greeter (no SDDM) | ✓ | |
+| [`archminimal-greeter`](https://github.com/NobodyOne04/archminimal-greeter) | login screen: greetd + Quickshell greeter (no SDDM) | ✓ | |
 
 Plus the toolchains, installed by `bin/setup` itself:
 
@@ -58,7 +58,7 @@ every command without running it, e.g. `make all DRY_RUN=1`.
 - Every component installs through its own `Makefile`, so each repo also works on its own.
 - Nothing is overwritten: the component installers move existing configs to `*.bak-<date>` and can restore them
   (`make -C ~/projects/zsh unlink`, `make -C ~/projects/nvim unlink`, `make -C ~/projects/hyprland uninstall`,
-  `sudo make -C ~/projects/sddm-login revert`).
+  `sudo make -C ~/projects/archminimal-greeter revert`).
 - Credentials never go into these repos. The zsh installer moves any keys found in an old `~/.zshrc` into
   `~/.config/zsh/secrets.zsh` (mode 600); add new ones with `secret-add NAME`.
 
@@ -66,7 +66,7 @@ every command without running it, e.g. `make all DRY_RUN=1`.
 
 1. **doctor**: git, make, curl, ssh, GitHub access, where each repo will live
 2. **base**: `pacman -Syu --needed git make base-devel openssh curl`
-3. **repos**: clone or fast-forward `zsh`, `nvim`, `hyprland`, `sddm-login`
+3. **repos**: clone or fast-forward `zsh`, `nvim`, `hyprland`, `archminimal-greeter`
 4. **zsh**: tools, link `~/.zshrc`, make zsh the login shell
    **tmux**: tools, link `~/.config/tmux`, plugins
 5. **python**: `pacman -S --needed python uv`
@@ -76,5 +76,5 @@ every command without running it, e.g. `make all DRY_RUN=1`.
    It updates itself; run `claude` in a project folder and log in in the browser the first time
 9. **desktop**: Hyprland packages, Bluetooth and power-profile services, config links
 10. **greeter**: greetd + the Quickshell login screen. It takes over from whatever display manager is active
-   (archinstall's Hyprland profile installs SDDM) and records it, so `sudo make -C ~/projects/sddm-login revert`
-   can undo it. To uninstall SDDM entirely afterwards: `sudo make -C ~/projects/sddm-login remove-sddm`.
+   (archinstall's Hyprland profile installs SDDM) and records it, so `sudo make -C ~/projects/archminimal-greeter revert`
+   can undo it. To uninstall SDDM entirely afterwards: `sudo make -C ~/projects/archminimal-greeter remove-sddm`.
