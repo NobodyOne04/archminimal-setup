@@ -1,4 +1,4 @@
-# linux_setup
+# archminimal-setup
 
 One command to set up the whole archminimal environment on a fresh Arch Linux machine (and the shell and
 editor parts on macOS). It clones the component repos and runs each one's own installer in the right order.
@@ -8,7 +8,7 @@ editor parts on macOS). It clones the component repos and runs each one's own in
 | [`zsh`](https://github.com/NobodyOne04/zsh) | fast zsh with p10k prompt, fzf, devops helpers | ✓ | ✓ |
 | [`tmux`](https://github.com/NobodyOne04/tmux) | tmux: Alt-key navigation shared with nvim, project sessions, popups, sessions that survive reboots | ✓ | ✓ |
 | [`nvim`](https://github.com/NobodyOne04/nvim) | Neovim: LSP, treesitter, telescope, completion, Copilot | ✓ | ✓ |
-| [`hyprland`](https://github.com/NobodyOne04/hyprland) | Hyprland desktop: bar, launcher, lock, idle, kitty | ✓ | |
+| [`archminimal-hypr`](https://github.com/NobodyOne04/archminimal-hypr) | Hyprland desktop: bar, launcher, lock, idle, kitty | ✓ | |
 | [`archminimal-greeter`](https://github.com/NobodyOne04/archminimal-greeter) | login screen: greetd + Quickshell greeter (no SDDM) | ✓ | |
 
 Plus the toolchains, installed by `bin/setup` itself:
@@ -28,8 +28,8 @@ sudo pacman -S --needed git make openssh
 # the repos are private: give this machine a GitHub SSH key
 ssh-keygen -t ed25519 && cat ~/.ssh/id_ed25519.pub   # add it at https://github.com/settings/ssh/new
 
-git clone git@github.com:NobodyOne04/linux_setup.git ~/projects/linux_setup
-cd ~/projects/linux_setup
+git clone git@github.com:NobodyOne04/archminimal-setup.git ~/projects/archminimal-setup
+cd ~/projects/archminimal-setup
 make doctor     # checks tools and GitHub access, shows the plan
 make all        # base packages, repos, zsh, python, go, nvim, claude, desktop, login screen
 reboot          # the archminimal login screen starts Hyprland
@@ -57,7 +57,7 @@ every command without running it, e.g. `make all DRY_RUN=1`.
   cloned under another folder name is reused, never cloned twice.
 - Every component installs through its own `Makefile`, so each repo also works on its own.
 - Nothing is overwritten: the component installers move existing configs to `*.bak-<date>` and can restore them
-  (`make -C ~/projects/zsh unlink`, `make -C ~/projects/nvim unlink`, `make -C ~/projects/hyprland uninstall`,
+  (`make -C ~/projects/zsh unlink`, `make -C ~/projects/nvim unlink`, `make -C ~/projects/archminimal-hypr uninstall`,
   `sudo make -C ~/projects/archminimal-greeter revert`).
 - Credentials never go into these repos. The zsh installer moves any keys found in an old `~/.zshrc` into
   `~/.config/zsh/secrets.zsh` (mode 600); add new ones with `secret-add NAME`.
@@ -66,7 +66,8 @@ every command without running it, e.g. `make all DRY_RUN=1`.
 
 1. **doctor**: git, make, curl, ssh, GitHub access, where each repo will live
 2. **base**: `pacman -Syu --needed git make base-devel openssh curl`
-3. **repos**: clone or fast-forward `zsh`, `nvim`, `hyprland`, `archminimal-greeter`
+3. **repos**: clone or fast-forward `zsh`, `tmux`, `nvim`, `archminimal-hypr`, `archminimal-greeter` (a clone made
+   before a repo was renamed is found under its old name and pointed at the new one)
 4. **zsh**: tools, link `~/.zshrc`, make zsh the login shell
    **tmux**: tools, link `~/.config/tmux`, plugins
 5. **python**: `pacman -S --needed python uv`
