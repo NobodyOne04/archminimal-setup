@@ -1,4 +1,4 @@
-# linux_setup — run `make help`. Every target calls bin/setup; add
+# archminimal-setup — run `make help`. Every target calls bin/setup; add
 # DRY_RUN=1 to see the commands without running them.
 
 SETUP := ./bin/setup $(if $(DRY_RUN),--dry-run) $(if $(YES),--yes)

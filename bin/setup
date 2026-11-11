@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# linux_setup: one entry point for the archminimal setup.
+# archminimal-setup: one entry point for the archminimal setup.
 #
 #   setup [--dry-run] [--yes] <command>
 #
@@ -28,7 +28,7 @@ set -euo pipefail
 
 PROJECTS=${PROJECTS:-$HOME/projects}
 GIT_BASE=${GIT_BASE:-git@github.com:NobodyOne04}
-REPOS=(zsh tmux nvim hyprland archminimal-greeter)
+REPOS=(zsh tmux nvim archminimal-hypr archminimal-greeter)
 
 DRY_RUN=0 YES=0
 OS=linux; [[ $OSTYPE == darwin* ]] && OS=mac
@@ -57,13 +57,24 @@ confirm() {
 
 need_arch() { (( IS_ARCH )) || die "'$1' needs Arch Linux (pacman); this is $OS."; }
 
+# Repos renamed on GitHub (history kept, old URLs redirect). A clone made
+# before the rename still has the old origin URL; it is found under either
+# name, and `setup repos` points it at the new one.
+old_name() {
+  case $1 in
+    archminimal-hypr) echo hyprland ;;
+  esac
+}
+
 # Where a repo lives: an existing clone anywhere in $PROJECTS whose origin
 # matches (so differently named folders are reused), else $PROJECTS/<name>.
 repo_dir() {
-  local name=$1 d url
+  local name=$1 old d url
+  old=$(old_name "$name")
   for d in "$PROJECTS"/*/; do
     url=$(git -C "$d" remote get-url origin 2>/dev/null) || continue
-    [[ ${url%.git} == */$name ]] && { echo "${d%/}"; return; }
+    url=${url%.git}
+    if [[ $url == */$name || ( -n $old && $url == */$old ) ]]; then echo "${d%/}"; return; fi
   done
   echo "$PROJECTS/$name"
 }
@@ -166,6 +177,9 @@ cmd_repos() {
   for r in "${REPOS[@]}"; do
     d=$(repo_dir "$r")
     if [[ -d $d/.git ]]; then
+      if [[ $(git -C "$d" remote get-url origin) != "$(repo_url "$r")" ]]; then
+        run git -C "$d" remote set-url origin "$(repo_url "$r")" && ok "$r: origin now $(repo_url "$r") (renamed)"
+      fi
       if [[ -n $(git -C "$d" status --porcelain) ]]; then
         warn "$r: local changes, not pulling (${d/#$HOME/\~})"
       else
@@ -254,7 +268,7 @@ cmd_claude() {
 cmd_desktop() {
   step "desktop (Hyprland)"
   need_arch desktop
-  local d; d=$(require_repo hyprland)
+  local d; d=$(require_repo archminimal-hypr)
   run make -C "$d" deps
   run make -C "$d" install
   info "log in to Hyprland (or run 'make -C ${d/#$HOME/\~} reload' inside it)"
@@ -311,7 +325,7 @@ cmd_status() {
         [[ -x $d/scripts/link.sh ]] && "$d/scripts/link.sh" status | sed 's/^/  /' ;;
       nvim)
         if [[ $(readlink "$HOME/.config/nvim" 2>/dev/null) == "$d" ]]; then ok "linked: ~/.config/nvim"; else info "not linked: ~/.config/nvim"; fi ;;
-      hyprland)   [[ -x $d/bin/links.sh ]] && "$d/bin/links.sh" status | sed 's/^/  /' ;;
+      archminimal-hypr) [[ -x $d/bin/links.sh ]] && "$d/bin/links.sh" status | sed 's/^/  /' ;;
       archminimal-greeter) if (( IS_ARCH )); then make -s -C "$d" status 2>/dev/null; fi ;;
     esac
   done
@@ -338,7 +352,7 @@ cmd_check() {
   d=$(repo_dir zsh);        [[ -d $d ]] && { step "zsh";        run make -s -C "$d" check || fail=1; }
   d=$(repo_dir tmux);       [[ -d $d ]] && { step "tmux";       run make -s -C "$d" check || fail=1; }
   d=$(repo_dir nvim);       [[ -d $d ]] && { step "nvim";       run make -s -C "$d" check || fail=1; }
-  d=$(repo_dir hyprland);   [[ -d $d ]] && { step "hyprland";   run make -s -C "$d" lint  || fail=1; }
+  d=$(repo_dir archminimal-hypr); [[ -d $d ]] && { step "archminimal-hypr"; run make -s -C "$d" lint || fail=1; }
   d=$(repo_dir archminimal-greeter); [[ -d $d ]] && { step "archminimal-greeter"; run make -s -C "$d" lint || fail=1; }
   (( fail == 0 )) || die "some checks failed"
 }
