@@ -1,0 +1,36 @@
+# 0008. Btrfs snapshot of / (without home) before destructive system changes
+
+- Status: Accepted
+- Date: 2026-11-18
+
+`setup snapshot` takes a read-only btrfs snapshot of the root subvolume, leaving home out, and
+`setup remove-sddm` takes one before it removes anything. A system change that goes wrong is rolled back
+by booting a live USB and swapping the root subvolume for the snapshot.
+
+## Technical details
+- **Where**: `snapshots/root-<YYYY-MM-DD_HHMMSS>[-label]` at the top level (subvolid 5) of the root
+  filesystem, beside the root subvolume, not inside it. The top level is mounted on a temporary folder
+  for the snapshot and unmounted after (also on failure). A snapshot never contains older snapshots,
+  and the running system doesn't see them.
+- **Home left out**: home is rebuilt with `make all` (ADR-0007) and holds personal data that a system
+  rollback must not undo. A separate `/home` mount or a `/home` subvolume is never part of a btrfs
+  snapshot; if `/home` is a plain folder in the root subvolume, the snapshot is made writable, its
+  `/home` emptied, then set read-only.
+- **In `setup all`**: right after `doctor`, before `base` (`pacman -Syu`) changes anything, labelled
+  `pre-setup-all`; skipped with a note when `/` is not btrfs. `all` ends with `remove-sddm` after the
+  greeter step, which reuses that snapshot instead of taking a second one.
+- **Read-only**: a snapshot can't be changed by accident; rolling back makes a writable snapshot of it.
+- **Rollback** (printed after each snapshot): from a live USB, mount the top level, `mv root root.broken`,
+  `btrfs subvolume snapshot snapshots/<name> root`, reboot.
+- **remove-sddm**: refuses while greetd is not the login screen (the next boot would end at a TTY);
+  lists what is left of SDDM, asks once, snapshots, removes `sddm-*` add-ons, runs the greeter repo's
+  `remove-sddm` (`pacman -Rns sddm`), then deletes what pacman leaves: `/var/lib/sddm`, config, logs,
+  cache, the downloaded `sddm*` packages in `/var/cache/pacman/pkg`, `~/.local/share/sddm`, the `sddm` user and group. Ends by listing anything still there.
+- **Consequences**: + one step back from any system change; − snapshots are kept until removed by hand
+  (`sudo btrfs subvolume delete`); no snapshot on a non-btrfs root (remove-sddm asks before going on).
+
+## Technologies and alternatives
+- Involved: btrfs-progs, `mount -o subvolid=5`, the greeter repo's Makefile.
+- Alternatives: snapper + snap-pac (automatic snapshots on every pacman run): more packages and config
+  for a minimal system, can be added later and uses the same layout idea; a tar backup of `/`: slow,
+  large, and not atomic.

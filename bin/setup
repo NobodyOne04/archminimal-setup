@@ -6,6 +6,8 @@
 # Commands (in the order `all` runs them):
 #   doctor    check system, tools, GitHub access; print the plan
 #   base      base packages (git, make, base-devel/Xcode tools, openssh)
+#   git       your git name and email in ~/.gitconfig (GIT_NAME, GIT_EMAIL or asks);
+#             Linux: ssh-agent, so a key's passphrase is asked once per login (ADR-0009)
 #   packages  macOS: install everything in the Brewfile (brew bundle)
 #   repos     create $PROJECTS (/opt/archminimal) if needed, clone missing repos, fast-forward the rest
 #   zsh       shell (zsh repo: deps, link, login shell)
@@ -17,7 +19,8 @@
 #   desktop   Hyprland desktop: bar, launcher, lock, kitty (Arch only)
 #   greeter   login screen: greetd + Quickshell greeter; replaces the active
 #             display manager, e.g. SDDM (Arch only)
-#   all       doctor base [packages] repos zsh tmux python go nvim claude desktop greeter
+#   all       doctor snapshot base git [packages] repos zsh tmux python go nvim claude desktop
+#             greeter remove-sddm  (snapshot only on a btrfs root)
 #   status    branch / changes / links for every repo, tool versions
 #   update    pull every repo, then update plugins
 #   check     run each repo's own checks
@@ -25,6 +28,8 @@
 #   packages-clean  macOS: uninstall those (asks first)
 #   ssh-key   create an SSH key (if none) and show how to add it to GitHub
 #   migrate   move clones from ~/projects to $PROJECTS and relink everything (ADR-0007)
+#   snapshot [label]  read-only btrfs snapshot of / without /home (ADR-0008)
+#   remove-sddm  snapshot, then wipe SDDM: packages, config, state, user (Arch)
 set -euo pipefail
 
 # The repos live outside home, so home can be wiped and relinked (ADR-0007).
@@ -118,6 +123,8 @@ cmd_doctor() {
       missing=1
     fi
   fi
+  if [[ -n $(git config --file "$GITCONFIG" user.email 2>/dev/null) ]]; then ok "git identity: $(git config --file "$GITCONFIG" user.name) <$(git config --file "$GITCONFIG" user.email)>"
+  else info "git identity not set: 'setup git' asks for it"; fi
   if [[ $OS == linux ]] && ! (( IS_ARCH )); then warn "not Arch: zsh and nvim work, desktop and greeter do not"; fi
   local r; for r in "${REPOS[@]}"; do
     local d; d=$(repo_dir "$r")
@@ -141,6 +148,50 @@ cmd_base() {
   else
     die "unsupported system: install git, make, curl and openssh yourself"
   fi
+}
+
+# ---------- git identity + ssh-agent (ADR-0009) ----------
+# Identity goes in ~/.gitconfig, never `git config --global`: the zsh repo
+# links ~/.config/git/config into itself, and with no ~/.gitconfig --global
+# writes there, i.e. into a public repo. Git reads ~/.gitconfig after it.
+GITCONFIG=$HOME/.gitconfig
+SSH_CONFIG=$HOME/.ssh/config
+SSH_MARK='# archminimal: ssh-agent (setup git)'
+
+cmd_git() {
+  step "git identity"
+  local key val prompt
+  for key in name email; do
+    val=$(git config --file "$GITCONFIG" "user.$key" 2>/dev/null || true)
+    if [[ -n $val ]]; then ok "user.$key: $val"; continue; fi
+    [[ $key == name ]] && val=${GIT_NAME:-} || val=${GIT_EMAIL:-}
+    if [[ -z $val ]] && (( ! DRY_RUN )); then
+      [[ -t 0 ]] || die "user.$key not set: run with GIT_NAME=… GIT_EMAIL=… or from a terminal"
+      prompt="git user.$key (for your commits): "
+      read -r -p "  $prompt" val
+      [[ -n $val ]] || die "user.$key is needed for commits"
+    fi
+    run git config --file "$GITCONFIG" "user.$key" "${val:-<your $key>}"
+  done
+  [[ $OS == linux ]] || { info "macOS: the system ssh-agent and Keychain hold the passphrase"; return 0; }
+  step "ssh-agent"
+  # systemd's user socket starts the agent on first use; ssh finds it through
+  # IdentityAgent (so no SSH_AUTH_SOCK is needed in any shell or session), and
+  # AddKeysToAgent loads a key the first time it is used: one passphrase per login.
+  if systemctl --user is-enabled ssh-agent.socket >/dev/null 2>&1; then ok "ssh-agent.socket enabled"
+  else run systemctl --user enable --now ssh-agent.socket; fi
+  if grep -qF "$SSH_MARK" "$SSH_CONFIG" 2>/dev/null; then ok "~/.ssh/config uses the agent"
+  else
+    run install -d -m 0700 "$HOME/.ssh"
+    printf '  %s$ append to ~/.ssh/config: Host * AddKeysToAgent yes, IdentityAgent ${XDG_RUNTIME_DIR}/ssh-agent.socket%s\n' "$M" "$N"
+    (( DRY_RUN )) || {
+      # at the end: ssh takes the first value it finds, so the user's own Host blocks win
+      [[ -s $SSH_CONFIG ]] && echo >> "$SSH_CONFIG"
+      printf '%s\nHost *\n    AddKeysToAgent yes\n    IdentityAgent ${XDG_RUNTIME_DIR}/ssh-agent.socket\n' "$SSH_MARK" >> "$SSH_CONFIG"
+      chmod 600 "$SSH_CONFIG"
+    }
+  fi
+  info "the first ssh/git push of a login asks for the key's passphrase; after that, no more until logout"
 }
 
 # ---------- Brewfile (macOS) ----------
@@ -338,16 +389,130 @@ cmd_greeter() {
   need_arch greeter
   local d; d=$(require_repo archminimal-greeter)
   info "greetd replaces the active display manager (e.g. SDDM) from the next boot."
-  info "undo: sudo make -C ${d/#$HOME/\~} revert   remove SDDM: sudo make -C ${d/#$HOME/\~} remove-sddm"
+  info "undo: sudo make -C ${d/#$HOME/\~} revert   remove SDDM completely: setup remove-sddm"
   run make -C "$d" deps
   run make -C "$d" check
   run sudo make -C "$d" install
   run sudo make -C "$d" enable
 }
 
+# ---------- btrfs snapshot of / (ADR-0008) ----------
+# Read-only snapshot of the root subvolume, home left out. Snapshots sit at the
+# top of the filesystem, beside the root subvolume (<top>/snapshots/root-<date>),
+# not inside it: a snapshot never contains older snapshots, and rolling back
+# is a rename. The top level is mounted only for the snapshot.
+SNAP_TOP='' SNAP_TAKEN=''
+snapshot_unmount() {
+  [[ -n $SNAP_TOP ]] || return 0
+  mountpoint -q "$SNAP_TOP" && sudo umount "$SNAP_TOP"
+  rmdir "$SNAP_TOP" 2>/dev/null || true
+  SNAP_TOP=''
+}
+
+cmd_snapshot() {
+  local label=${1:-}
+  step "snapshot of / (btrfs, without /home)"
+  [[ $OS == linux ]] || die "snapshot: Linux only"
+  local fstype; fstype=$(findmnt -no FSTYPE /)
+  [[ $fstype == btrfs ]] || die "/ is $fstype, not btrfs: no snapshot"
+  command -v btrfs >/dev/null || die "btrfs-progs missing: sudo pacman -S btrfs-progs"
+  local src dev subvol name dst home_in_root=0
+  src=$(findmnt -no SOURCE /); dev=${src%%\[*}
+  subvol=$(findmnt -no FSROOT /)        # e.g. /root or /@; / when root is the top level
+  # /home left out: a separate mount or its own subvolume (inode 256) is never
+  # part of a btrfs snapshot; a plain folder in the root subvolume is emptied
+  # in the snapshot before it is made read-only.
+  if findmnt -n /home >/dev/null 2>&1; then info "/home is a separate mount: not in the snapshot"
+  elif [[ $(stat -c %i /home 2>/dev/null) == 256 ]]; then info "/home is its own subvolume: not in the snapshot"
+  else home_in_root=1; info "/home is a folder in the root subvolume: emptied in the snapshot"; fi
+  label=${label//[^A-Za-z0-9_.-]/-}
+  name=root-$(date +%Y-%m-%d_%H%M%S)${label:+-$label}
+  SNAP_TOP=$(mktemp -d)
+  trap snapshot_unmount EXIT
+  run sudo mount -o subvolid=5 "$dev" "$SNAP_TOP"
+  run sudo mkdir -p "$SNAP_TOP/snapshots"
+  dst=$SNAP_TOP/snapshots/$name
+  if (( home_in_root )); then
+    run sudo btrfs subvolume snapshot "$SNAP_TOP$subvol" "$dst"
+    run sudo find "$dst/home" -mindepth 1 -delete
+    run sudo btrfs property set -ts "$dst" ro true
+  else
+    run sudo btrfs subvolume snapshot -r "$SNAP_TOP$subvol" "$dst"
+  fi
+  snapshot_unmount
+  trap - EXIT
+  SNAP_TAKEN=$name
+  ok "snapshots/$name on $dev (read-only; root subvolume: $subvol)"
+  info "list:     sudo btrfs subvolume list -s /"
+  info "browse:   sudo mount -o subvol=snapshots/$name,ro $dev /mnt"
+  info "rollback: from a live USB mount $dev with subvolid=5, mv ${subvol#/} ${subvol#/}.broken,"
+  info "          btrfs subvolume snapshot snapshots/$name ${subvol#/}, reboot"
+}
+
+# ---------- SDDM ----------
+# Everything SDDM leaves on a machine. `pacman -Rns` removes the package files
+# and its config, but not the sddm user, its state folder, logs or what it
+# wrote in home.
+SDDM_PATHS=(/etc/sddm.conf /etc/sddm.conf.d /var/lib/sddm /usr/lib/sddm /usr/share/sddm
+            /var/log/sddm.log /var/cache/sddm /etc/pam.d/sddm /etc/pam.d/sddm-autologin /etc/pam.d/sddm-greeter
+            /usr/lib/sysusers.d/sddm.conf /usr/lib/tmpfiles.d/sddm.conf)
+# downloaded packages in pacman's cache (sddm and sddm-* add-ons, with signatures)
+sddm_cached() { compgen -G '/var/cache/pacman/pkg/sddm-[0-9]*' || true; compgen -G '/var/cache/pacman/pkg/sddm-*-[0-9]*' || true; }
+SDDM_HOME_PATHS=("$HOME/.local/share/sddm" "$HOME/.cache/sddm" "$HOME/.config/sddm" "$HOME/.config/sddm.conf")
+
+sddm_leftovers() {
+  local p
+  pacman -Qq 2>/dev/null | grep -E '^sddm($|-)' | sed 's/^/package /' || true
+  for p in "${SDDM_PATHS[@]}" "${SDDM_HOME_PATHS[@]}"; do [[ -e $p || -L $p ]] && echo "$p"; done
+  sddm_cached | sort -u
+  getent passwd sddm >/dev/null && echo "user sddm"
+  getent group sddm >/dev/null && echo "group sddm"
+  return 0
+}
+
+cmd_remove_sddm() {
+  step "remove SDDM completely"
+  need_arch remove-sddm
+  local d; d=$(require_repo archminimal-greeter)
+  # without a login screen the next boot ends at a TTY
+  if [[ $(basename "$(readlink /etc/systemd/system/display-manager.service 2>/dev/null)") != greetd.service ]]; then
+    (( DRY_RUN )) || die "greetd is not the login screen yet: run 'setup greeter' first"
+    warn "greetd is not the login screen yet (setup greeter); a real run stops here"
+  fi
+  local left; left=$(sddm_leftovers)
+  if [[ -z $left ]]; then ok "nothing of SDDM is left"; return 0; fi
+  printf '%s\n' "$left" | sed 's/^/    /'
+  confirm "remove all of the above (after a btrfs snapshot of /)?" || { info "nothing removed"; return 0; }
+  if [[ -n $SNAP_TAKEN ]]; then info "snapshot from this run: snapshots/$SNAP_TAKEN"
+  elif [[ $(findmnt -no FSTYPE /) == btrfs ]]; then cmd_snapshot pre-remove-sddm
+  else confirm "/ is not on btrfs, so there is no snapshot. remove anyway?" || return 0; fi
+  step "packages"
+  local extra; extra=$(pacman -Qq 2>/dev/null | grep -E '^sddm-' || true)
+  # add-ons (themes, kcm) depend on sddm, so they go first
+  [[ -n $extra ]] && run sudo pacman -Rns $extra
+  if pacman -Q sddm >/dev/null 2>&1; then
+    run sudo make -C "$d" remove-sddm     # pacman -Rns sddm, forgets it as the previous login screen
+  fi
+  step "leftovers"
+  local p
+  for p in "${SDDM_PATHS[@]}"; do [[ -e $p || -L $p ]] && run sudo rm -rf "$p"; done
+  for p in "${SDDM_HOME_PATHS[@]}"; do [[ -e $p || -L $p ]] && run rm -rf "$p"; done
+  while IFS= read -r p; do run sudo rm -f "$p"; done < <(sddm_cached | sort -u)
+  getent passwd sddm >/dev/null && run sudo userdel sddm
+  getent group sddm >/dev/null && run sudo groupdel sddm
+  (( DRY_RUN )) && return 0
+  left=$(sddm_leftovers)
+  if [[ -z $left ]]; then ok "SDDM is gone"; else warn "still there:"; printf '%s\n' "$left" | sed 's/^/    /'; fi
+  return 0
+}
+
 cmd_all() {
   cmd_doctor
+  # one rollback point for the whole run, before anything changes the system
+  if [[ $OS == linux && $(findmnt -no FSTYPE / 2>/dev/null) == btrfs ]]; then cmd_snapshot pre-setup-all
+  else info "no snapshot: / is not on btrfs"; fi
   cmd_base
+  cmd_git
   [[ $OS == mac ]] && cmd_packages
   cmd_repos
   cmd_zsh
@@ -359,6 +524,7 @@ cmd_all() {
   if (( IS_ARCH )); then
     cmd_desktop
     cmd_greeter
+    cmd_remove_sddm   # greetd is the login screen now; asks before removing anything
   else
     info "skipping desktop and login screen (Arch only)"
   fi
@@ -452,8 +618,10 @@ while [[ $# -gt 0 ]]; do
 done
 cmd=${1:-}; [[ -n $cmd ]] || { usage; exit 2; }
 case $cmd in
-  doctor|base|repos|zsh|tmux|python|go|nvim|claude|desktop|greeter|all|status|update|check|migrate) "cmd_$cmd" ;;
+  doctor|base|git|repos|zsh|tmux|python|go|nvim|claude|desktop|greeter|all|status|update|check|migrate) "cmd_$cmd" ;;
   ssh-key) cmd_ssh_key ;;
+  snapshot) cmd_snapshot "${2:-}" ;;
+  remove-sddm) cmd_remove_sddm ;;
   packages) cmd_packages ;;
   packages-check) cmd_packages_check ;;
   packages-clean) cmd_packages_clean ;;
