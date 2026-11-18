@@ -3,17 +3,19 @@
 
 SETUP := ./bin/setup $(if $(DRY_RUN),--dry-run) $(if $(YES),--yes)
 .DEFAULT_GOAL := help
-.PHONY: help all tmux doctor base packages packages-check packages-clean repos zsh python go nvim claude desktop greeter status update check ssh-key migrate snapshot remove-sddm
+.PHONY: help all tmux doctor base git packages packages-check packages-clean repos zsh python go nvim claude desktop greeter status update check ssh-key migrate snapshot remove-sddm
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ {printf "  \033[36m%-8s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-all: ## Everything: doctor, btrfs snapshot, base, repos, zsh, tmux, python, go, nvim, claude, desktop, login screen, remove SDDM
+all: ## Everything: doctor, btrfs snapshot, base, git, repos, zsh, tmux, python, go, nvim, claude, desktop, login screen, remove SDDM
 	@$(SETUP) all
 doctor: ## Check system, tools and GitHub access; show the plan
 	@$(SETUP) doctor
 base: ## Base packages (git, make, base-devel, openssh)
 	@$(SETUP) base
+git: ## Git name/email in ~/.gitconfig (GIT_NAME=, GIT_EMAIL= or asks); ssh-agent: passphrase once per login
+	@GIT_NAME="$(GIT_NAME)" GIT_EMAIL="$(GIT_EMAIL)" $(SETUP) git
 packages: ## macOS: install everything in the Brewfile
 	@$(SETUP) packages
 packages-check: ## macOS: list packages installed but not in the Brewfile

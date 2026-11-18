@@ -3,6 +3,8 @@
 ## Unreleased
 
 ### Added
+- `make git` (also in `make all`, after base): git name/email in `~/.gitconfig`; on Linux the ssh-agent socket
+  and `~/.ssh/config` lines so a key's passphrase is asked once per login
 - `make snapshot`: read-only btrfs snapshot of `/` without `/home`, beside the root subvolume in `snapshots/`
 - `make remove-sddm`: snapshots `/`, then removes SDDM completely: packages and their cached downloads,
   config, state, logs, the `sddm` user and group, `~/.local/share/sddm`

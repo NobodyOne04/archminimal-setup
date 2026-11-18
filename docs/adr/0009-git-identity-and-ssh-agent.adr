@@ -1,0 +1,30 @@
+# 0009. Git identity in ~/.gitconfig; ssh-agent through systemd and ~/.ssh/config
+
+- Status: Accepted
+- Date: 2026-11-18
+
+`setup git` (part of `all`, right after `base`) sets the git name and email and, on Linux, an ssh-agent,
+so a fresh machine can commit and push without manual steps and a key's passphrase is typed once per login.
+
+## Technical details
+- **Problem**: on a fresh machine commits failed (no identity) and pushes failed from any process
+  without a terminal (no agent: ssh could not ask for the key's passphrase).
+- **Identity in `~/.gitconfig`**, written with `git config --file ~/.gitconfig`: the zsh repo links
+  `~/.config/git/config` into itself and keeps identity out of it (its README). With no `~/.gitconfig`,
+  `git config --global` writes to the linked file, i.e. into a public repo, so it is never used.
+  Values come from `GIT_NAME` / `GIT_EMAIL`, else the step asks; set values are left alone. Nothing
+  personal goes into this repo.
+- **Agent**: the `ssh-agent.socket` systemd user unit that ships with openssh, enabled; it starts the
+  agent on first use. A marked `Host *` block appended to `~/.ssh/config` sets
+  `IdentityAgent ${XDG_RUNTIME_DIR}/ssh-agent.socket` (ssh finds the agent without `SSH_AUTH_SOCK`, so
+  no shell or session config changes) and `AddKeysToAgent yes` (a key is loaded the first time it is
+  used). Appended at the end: ssh takes the first value, so the user's own Host blocks win. Added once.
+- **macOS**: identity only; the system agent and Keychain already keep the passphrase.
+- **Consequences**: + commits and pushes work from editors, scripts and agents after one passphrase
+  per login; − `ssh-add`/`ssh-add -l` in a shell need `SSH_AUTH_SOCK` set by hand (ssh and git don't).
+
+## Technologies and alternatives
+- Involved: git, openssh's `ssh-agent.socket`, `~/.ssh/config`.
+- Alternatives: `keychain` or an agent started from zshrc: an extra package or shell startup work, and
+  only processes started from that shell see it; gnome-keyring: a desktop dependency; a key without a
+  passphrase: anyone with the disk has the key.

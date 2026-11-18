@@ -6,6 +6,8 @@
 # Commands (in the order `all` runs them):
 #   doctor    check system, tools, GitHub access; print the plan
 #   base      base packages (git, make, base-devel/Xcode tools, openssh)
+#   git       your git name and email in ~/.gitconfig (GIT_NAME, GIT_EMAIL or asks);
+#             Linux: ssh-agent, so a key's passphrase is asked once per login (ADR-0009)
 #   packages  macOS: install everything in the Brewfile (brew bundle)
 #   repos     create $PROJECTS (/opt/archminimal) if needed, clone missing repos, fast-forward the rest
 #   zsh       shell (zsh repo: deps, link, login shell)
@@ -17,7 +19,7 @@
 #   desktop   Hyprland desktop: bar, launcher, lock, kitty (Arch only)
 #   greeter   login screen: greetd + Quickshell greeter; replaces the active
 #             display manager, e.g. SDDM (Arch only)
-#   all       doctor snapshot base [packages] repos zsh tmux python go nvim claude desktop
+#   all       doctor snapshot base git [packages] repos zsh tmux python go nvim claude desktop
 #             greeter remove-sddm  (snapshot only on a btrfs root)
 #   status    branch / changes / links for every repo, tool versions
 #   update    pull every repo, then update plugins
@@ -121,6 +123,8 @@ cmd_doctor() {
       missing=1
     fi
   fi
+  if [[ -n $(git config --file "$GITCONFIG" user.email 2>/dev/null) ]]; then ok "git identity: $(git config --file "$GITCONFIG" user.name) <$(git config --file "$GITCONFIG" user.email)>"
+  else info "git identity not set: 'setup git' asks for it"; fi
   if [[ $OS == linux ]] && ! (( IS_ARCH )); then warn "not Arch: zsh and nvim work, desktop and greeter do not"; fi
   local r; for r in "${REPOS[@]}"; do
     local d; d=$(repo_dir "$r")
@@ -144,6 +148,50 @@ cmd_base() {
   else
     die "unsupported system: install git, make, curl and openssh yourself"
   fi
+}
+
+# ---------- git identity + ssh-agent (ADR-0009) ----------
+# Identity goes in ~/.gitconfig, never `git config --global`: the zsh repo
+# links ~/.config/git/config into itself, and with no ~/.gitconfig --global
+# writes there, i.e. into a public repo. Git reads ~/.gitconfig after it.
+GITCONFIG=$HOME/.gitconfig
+SSH_CONFIG=$HOME/.ssh/config
+SSH_MARK='# archminimal: ssh-agent (setup git)'
+
+cmd_git() {
+  step "git identity"
+  local key val prompt
+  for key in name email; do
+    val=$(git config --file "$GITCONFIG" "user.$key" 2>/dev/null || true)
+    if [[ -n $val ]]; then ok "user.$key: $val"; continue; fi
+    [[ $key == name ]] && val=${GIT_NAME:-} || val=${GIT_EMAIL:-}
+    if [[ -z $val ]] && (( ! DRY_RUN )); then
+      [[ -t 0 ]] || die "user.$key not set: run with GIT_NAME=… GIT_EMAIL=… or from a terminal"
+      prompt="git user.$key (for your commits): "
+      read -r -p "  $prompt" val
+      [[ -n $val ]] || die "user.$key is needed for commits"
+    fi
+    run git config --file "$GITCONFIG" "user.$key" "${val:-<your $key>}"
+  done
+  [[ $OS == linux ]] || { info "macOS: the system ssh-agent and Keychain hold the passphrase"; return 0; }
+  step "ssh-agent"
+  # systemd's user socket starts the agent on first use; ssh finds it through
+  # IdentityAgent (so no SSH_AUTH_SOCK is needed in any shell or session), and
+  # AddKeysToAgent loads a key the first time it is used: one passphrase per login.
+  if systemctl --user is-enabled ssh-agent.socket >/dev/null 2>&1; then ok "ssh-agent.socket enabled"
+  else run systemctl --user enable --now ssh-agent.socket; fi
+  if grep -qF "$SSH_MARK" "$SSH_CONFIG" 2>/dev/null; then ok "~/.ssh/config uses the agent"
+  else
+    run install -d -m 0700 "$HOME/.ssh"
+    printf '  %s$ append to ~/.ssh/config: Host * AddKeysToAgent yes, IdentityAgent ${XDG_RUNTIME_DIR}/ssh-agent.socket%s\n' "$M" "$N"
+    (( DRY_RUN )) || {
+      # at the end: ssh takes the first value it finds, so the user's own Host blocks win
+      [[ -s $SSH_CONFIG ]] && echo >> "$SSH_CONFIG"
+      printf '%s\nHost *\n    AddKeysToAgent yes\n    IdentityAgent ${XDG_RUNTIME_DIR}/ssh-agent.socket\n' "$SSH_MARK" >> "$SSH_CONFIG"
+      chmod 600 "$SSH_CONFIG"
+    }
+  fi
+  info "the first ssh/git push of a login asks for the key's passphrase; after that, no more until logout"
 }
 
 # ---------- Brewfile (macOS) ----------
@@ -464,6 +512,7 @@ cmd_all() {
   if [[ $OS == linux && $(findmnt -no FSTYPE / 2>/dev/null) == btrfs ]]; then cmd_snapshot pre-setup-all
   else info "no snapshot: / is not on btrfs"; fi
   cmd_base
+  cmd_git
   [[ $OS == mac ]] && cmd_packages
   cmd_repos
   cmd_zsh
@@ -569,7 +618,7 @@ while [[ $# -gt 0 ]]; do
 done
 cmd=${1:-}; [[ -n $cmd ]] || { usage; exit 2; }
 case $cmd in
-  doctor|base|repos|zsh|tmux|python|go|nvim|claude|desktop|greeter|all|status|update|check|migrate) "cmd_$cmd" ;;
+  doctor|base|git|repos|zsh|tmux|python|go|nvim|claude|desktop|greeter|all|status|update|check|migrate) "cmd_$cmd" ;;
   ssh-key) cmd_ssh_key ;;
   snapshot) cmd_snapshot "${2:-}" ;;
   remove-sddm) cmd_remove_sddm ;;
