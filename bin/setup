@@ -228,7 +228,7 @@ cmd_migrate() {
   local l
   while IFS= read -r l; do
     run rm "$l"
-  done < <(find "$HOME/.zshrc" "${XDG_CONFIG_HOME:-$HOME/.config}" "$HOME/.local/bin" -maxdepth 3 -type l \
+  done < <(find "$HOME/.zshrc" "${XDG_CONFIG_HOME:-$HOME/.config}" "$HOME/.local" -maxdepth 4 -type l \
              -lname "$old/*" 2>/dev/null || true)
   step "relink"
   local d
