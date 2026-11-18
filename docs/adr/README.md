@@ -11,3 +11,4 @@ Decisions behind this repo. Format and statuses: [0001](0001-record-decisions-as
 | [0005](0005-brewfile-for-macos-packages.adr) | macOS packages declared in a commented Brewfile | Accepted |
 | [0006](0006-claude-code-via-official-installer.adr) | Claude Code through Anthropic's own installer | Accepted |
 | [0007](0007-repos-live-in-opt-archminimal.adr) | The repos live in /opt/archminimal; home only holds links | Accepted |
+| [0008](0008-btrfs-snapshot-before-system-changes.adr) | Btrfs snapshot of / (without home) before destructive system changes | Accepted |

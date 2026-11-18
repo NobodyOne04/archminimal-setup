@@ -3,6 +3,10 @@
 ## Unreleased
 
 ### Added
+- `make snapshot`: read-only btrfs snapshot of `/` without `/home`, beside the root subvolume in `snapshots/`
+- `make remove-sddm`: snapshots `/`, then removes SDDM completely: packages and their cached downloads,
+  config, state, logs, the `sddm` user and group, `~/.local/share/sddm`
+- `make all` takes a btrfs snapshot of `/` first (when `/` is btrfs) and ends with `remove-sddm`
 - Repos live in `/opt/archminimal`, outside home, so home can be wiped and relinked; `make migrate` moves an existing `~/projects` setup
 - Decision records in `docs/adr/`: six ADRs for the repo's existing decisions
 
