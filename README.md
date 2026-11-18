@@ -28,8 +28,8 @@ sudo pacman -S --needed git make openssh
 # the repos are private: give this machine a GitHub SSH key
 ssh-keygen -t ed25519 && cat ~/.ssh/id_ed25519.pub   # add it at https://github.com/settings/ssh/new
 
-# the repos live in /opt/archminimal, outside home (owned by you, so no sudo after this)
-sudo install -d -o "$USER" -g "$(id -gn)" /opt/archminimal
+# the repos live in /opt/archminimal, outside home (owned by you and private to you; no sudo after this)
+sudo install -d -m 0700 -o "$USER" -g "$(id -gn)" /opt/archminimal
 git clone git@github.com:NobodyOne04/archminimal-setup.git /opt/archminimal/archminimal-setup
 cd /opt/archminimal/archminimal-setup
 make doctor     # checks tools and GitHub access, shows the plan

@@ -13,8 +13,8 @@ losing the system: `make all` (or a part's `make install`) rebuilds the links.
   the shell and the editor config.
 - **Folder**: `/opt/archminimal/<repo>` for `zsh`, `tmux`, `nvim`, `archminimal-hypr`,
   `archminimal-greeter` and `archminimal-setup` itself. Created once with
-  `sudo install -d -o $USER -g $USER /opt/archminimal`, so `git pull`, editing and committing need no
-  sudo. `/opt` is the FHS place for add-on software; it is outside `/home`.
+  `sudo install -d -m 0700 -o $USER -g $USER /opt/archminimal`, so `git pull`, editing and committing need
+  no sudo. Mode `0700`: home hid the repos from other users before; outside home the folder has to. `/opt` is the FHS place for add-on software; it is outside `/home`.
 - **Work in place**: there is one copy of each repo; it is edited, committed and pushed in
   `/opt/archminimal` directly; no second working copy in home.
 - **macOS too**: same folder on the Mac (zsh, tmux, nvim, setup), so one layout and one set of docs for

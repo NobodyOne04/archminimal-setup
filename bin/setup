@@ -195,11 +195,17 @@ cmd_repos() {
 
 # $PROJECTS is a system folder owned by the user: created once with sudo, then
 # pulls and edits need none.
+# Mode 0700: the repos are private, and outside home nothing else hides them.
 cmd_folder() {
-  if [[ -d $PROJECTS && -w $PROJECTS ]]; then return 0; fi
-  info "the repos live in ${PROJECTS/#$HOME/\~}, outside home; creating it needs sudo once"
-  if [[ $PROJECTS == "$HOME"/* ]]; then run mkdir -p "$PROJECTS"
-  else run sudo install -d -o "$USER" -g "$(id -gn)" "$PROJECTS"; fi
+  if [[ ! -d $PROJECTS ]]; then
+    info "the repos live in ${PROJECTS/#$HOME/\~}, outside home; creating it needs sudo once"
+    if [[ $PROJECTS == "$HOME"/* ]]; then run mkdir -p -m 0700 "$PROJECTS"
+    else run sudo install -d -m 0700 -o "$USER" -g "$(id -gn)" "$PROJECTS"; fi
+  fi
+  if [[ -O $PROJECTS ]] && [[ $(stat -c %a "$PROJECTS" 2>/dev/null || stat -f %Lp "$PROJECTS") != 700 ]]; then
+    run chmod 0700 "$PROJECTS"
+  fi
+  [[ -w $PROJECTS ]] || (( DRY_RUN )) || die "$PROJECTS is not writable by $USER: sudo chown $USER $PROJECTS"
 }
 
 # Move clones from the old ~/projects to $PROJECTS, then relink every part so
