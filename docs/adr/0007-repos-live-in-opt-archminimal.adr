@@ -1,0 +1,53 @@
+# 0007. The archminimal repos live in /opt/archminimal; home only holds links
+
+- Status: Accepted
+- Date: 2026-11-18
+
+The component repos are cloned into a system folder, `/opt/archminimal`, owned by the user, instead of
+`~/projects`. Every config in home becomes a link into it, so anything in home can be deleted without
+losing the system: `make all` (or a part's `make install`) rebuilds the links.
+
+## Technical details
+- **Problem**: the live config (`~/.zshrc`, `~/.config/{hypr,quickshell/archminimal,kitty,nvim,tmux,…}`)
+  points at clones in `~/projects`. Clearing out home deletes the clones, and with them the desktop,
+  the shell and the editor config.
+- **Folder**: `/opt/archminimal/<repo>` for `zsh`, `tmux`, `nvim`, `archminimal-hypr`,
+  `archminimal-greeter` and `archminimal-setup` itself. Created once with
+  `sudo install -d -m 0700 -o $USER -g $USER /opt/archminimal`, so `git pull`, editing and committing need
+  no sudo. Mode `0700`: home hid the repos from other users before; outside home the folder has to. `/opt` is the FHS place for add-on software; it is outside `/home`.
+- **Work in place**: there is one copy of each repo; it is edited, committed and pushed in
+  `/opt/archminimal` directly; no second working copy in home.
+- **macOS too**: same folder on the Mac (zsh, tmux, nvim, setup), so one layout and one set of docs for
+  both machines.
+- **`bin/setup`**: `PROJECTS` default becomes `/opt/archminimal` (still overridable). New step
+  `setup folder` creates it (sudo, through `run` / `confirm`, [0004](0004-every-command-through-run-and-confirm.adr)),
+  and runs first in `all`. `repo_dir` / origin matching ([0003](0003-find-clones-by-origin-url.adr)) is unchanged.
+- **Migration** (existing machines): new step `setup migrate`: for each repo found in `~/projects` by
+  origin URL, moves it to `/opt/archminimal/<name>` (`mv`, so uncommitted work and stashes travel with
+  it), then re-runs each part's link step so every link points at the new place, replacing links that
+  point at the old clone. Refuses if the target already exists. Run from a TTY or restart the shell
+  after: the running bar loads from the old path until then. Leaves `~/projects` empty for the user
+  to remove.
+- **Unchanged**: each repo's installer already links from wherever its clone is (`$(CURDIR)`,
+  `dirname "$0"`), so no component install logic changes. Things installed as copies stay where they
+  are: greeter files in `/usr/share` and `/etc`, the camera helper in `/usr/local/bin`, the cursor
+  theme in `~/.local/share/icons` (rebuilt by `make install`).
+- **Also changes**: `tmux`'s `tms` project picker searches `/opt/archminimal` as well as `~/projects`;
+  READMEs and CLAUDE.md files that say `~/projects/<repo>`; the `dotfiles` skill map in the `claude`
+  repo. One PR per repo, this one first.
+- **What stays in home and is safe to delete**: the links themselves, plugin and cache folders
+  (`~/.local/share/nvim/lazy`, tmux plugins, `~/.oh-my-zsh`, rebuilt by the installers from lock
+  files), and per-machine untracked files. Personal data that isn't rebuildable (`~/.ssh` keys,
+  `~/.config/zsh/secrets.zsh`, `local.zsh`, `~/.config/hypr/local.lua`) is still in home: deleting it
+  doesn't break the system, but it is lost. Backups are a later decision.
+- **Consequences**: + home can be wiped and rebuilt with one command; the system folder is the single
+  source of truth. − repos live outside home, so tools that assume `~/projects` (editor recent lists,
+  `tms`) need the new path; the folder is created with sudo once; a user-owned folder under `/opt`
+  is unusual (it is a single-user machine).
+
+## Technologies and alternatives
+- Involved: git, `install -d`, the component Makefiles.
+- Alternatives: system-wide defaults in `/etc/xdg` (no links in home at all): every app needs its own
+  path quirk (Hyprland and nvim don't read `XDG_CONFIG_DIRS` for their main config, zsh needs
+  `/etc/zsh`), and editing needs root; root-owned `/opt/archminimal`: every pull and edit needs sudo;
+  keep `~/projects` and copy into `/opt`: two copies drift apart.

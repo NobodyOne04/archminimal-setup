@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- Repos live in `/opt/archminimal`, outside home, so home can be wiped and relinked; `make migrate` moves an existing `~/projects` setup
 - Decision records in `docs/adr/`: six ADRs for the repo's existing decisions
 
 ### Changed

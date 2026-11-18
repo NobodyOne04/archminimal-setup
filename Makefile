@@ -3,7 +3,7 @@
 
 SETUP := ./bin/setup $(if $(DRY_RUN),--dry-run) $(if $(YES),--yes)
 .DEFAULT_GOAL := help
-.PHONY: help all tmux doctor base packages packages-check packages-clean repos zsh python go nvim claude desktop greeter status update check ssh-key
+.PHONY: help all tmux doctor base packages packages-check packages-clean repos zsh python go nvim claude desktop greeter status update check ssh-key migrate
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ {printf "  \033[36m%-8s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -20,7 +20,7 @@ packages-check: ## macOS: list packages installed but not in the Brewfile
 	@$(SETUP) packages-check
 packages-clean: ## macOS: uninstall packages not in the Brewfile (asks first)
 	@$(SETUP) packages-clean
-repos: ## Clone missing repos into ~/projects, fast-forward the rest
+repos: ## Clone missing repos into /opt/archminimal (created once, sudo), fast-forward the rest
 	@$(SETUP) repos
 zsh: ## Shell: tools, ~/.zshrc link, login shell
 	@$(SETUP) zsh
@@ -46,3 +46,5 @@ check: ## Run each repo's own checks
 	@$(SETUP) check
 ssh-key: ## Create an SSH key and show how to add it to GitHub
 	@$(SETUP) ssh-key
+migrate: ## Move clones from ~/projects to /opt/archminimal and relink everything
+	@$(SETUP) migrate
