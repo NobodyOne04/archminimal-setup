@@ -75,7 +75,8 @@ every command without running it, e.g. `make all DRY_RUN=1`.
 7. **nvim**: tools, link `~/.config/nvim`, plugins at locked versions, language servers
 8. **claude**: Claude Code via Anthropic's installer into `~/.local/bin/claude`; skipped if already installed.
    It updates itself; run `claude` in a project folder and log in in the browser the first time
-9. **desktop**: Hyprland packages, Bluetooth and power-profile services, config links
+9. **desktop**: Hyprland packages, Bluetooth and power-profile services, config links; asks whether to install the camera kill
+   switch (`make privacy`: a root helper + polkit rule; `make update` warns when it is out of date)
 10. **greeter**: greetd + the Quickshell login screen. It takes over from whatever display manager is active
    (archinstall's Hyprland profile installs SDDM) and records it, so `sudo make -C ~/projects/archminimal-greeter revert`
    can undo it. To uninstall SDDM entirely afterwards: `sudo make -C ~/projects/archminimal-greeter remove-sddm`.
