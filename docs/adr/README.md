@@ -10,3 +10,4 @@ Decisions behind this repo. Format and statuses: [0001](0001-record-decisions-as
 | [0004](0004-every-command-through-run-and-confirm.adr) | Every command goes through run (dry-run) and confirm | Accepted |
 | [0005](0005-brewfile-for-macos-packages.adr) | macOS packages declared in a commented Brewfile | Accepted |
 | [0006](0006-claude-code-via-official-installer.adr) | Claude Code through Anthropic's own installer | Accepted |
+| [0007](0007-repos-live-in-opt-archminimal.adr) | The repos live in /opt/archminimal; home only holds links | Accepted |

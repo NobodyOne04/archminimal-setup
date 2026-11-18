@@ -28,8 +28,10 @@ sudo pacman -S --needed git make openssh
 # the repos are private: give this machine a GitHub SSH key
 ssh-keygen -t ed25519 && cat ~/.ssh/id_ed25519.pub   # add it at https://github.com/settings/ssh/new
 
-git clone git@github.com:NobodyOne04/archminimal-setup.git ~/projects/archminimal-setup
-cd ~/projects/archminimal-setup
+# the repos live in /opt/archminimal, outside home (owned by you, so no sudo after this)
+sudo install -d -o "$USER" -g "$(id -gn)" /opt/archminimal
+git clone git@github.com:NobodyOne04/archminimal-setup.git /opt/archminimal/archminimal-setup
+cd /opt/archminimal/archminimal-setup
 make doctor     # checks tools and GitHub access, shows the plan
 make all        # base packages, repos, zsh, python, go, nvim, claude, desktop, login screen
 reboot          # the archminimal login screen starts Hyprland
@@ -37,6 +39,17 @@ reboot          # the archminimal login screen starts Hyprland
 
 `make all` asks for your sudo password and confirms each pacman install. Add `DRY_RUN=1` to any target to see
 every command without running it, e.g. `make all DRY_RUN=1`.
+
+## Moving from ~/projects
+
+Machines set up before the repos moved to `/opt/archminimal` (ADR-0007): from a TTY (or restart the bar after),
+
+```bash
+cd ~/projects/archminimal-setup && git pull && make migrate
+```
+
+It moves every clone (uncommitted work included), relinks the configs in home, moves this repo last and leaves
+`~/projects` to delete.
 
 ## Everyday
 
@@ -53,12 +66,13 @@ every command without running it, e.g. `make all DRY_RUN=1`.
 ## How it works
 
 - `bin/setup` does the work; the Makefile only forwards to it (`./bin/setup --help` lists the commands).
-- Repos live in `~/projects` (`PROJECTS=...` to change). An existing clone is found by its `origin` URL, so a repo
+- Repos live in `/opt/archminimal` (`PROJECTS=...` to change), outside home: everything in home is a link into it
+  or a rebuildable cache, so home can be wiped and `make all` puts it back. An existing clone is found by its `origin` URL, so a repo
   cloned under another folder name is reused, never cloned twice.
 - Every component installs through its own `Makefile`, so each repo also works on its own.
 - Nothing is overwritten: the component installers move existing configs to `*.bak-<date>` and can restore them
-  (`make -C ~/projects/zsh unlink`, `make -C ~/projects/nvim unlink`, `make -C ~/projects/archminimal-hypr uninstall`,
-  `sudo make -C ~/projects/archminimal-greeter revert`).
+  (`make -C /opt/archminimal/zsh unlink`, `make -C /opt/archminimal/nvim unlink`, `make -C /opt/archminimal/archminimal-hypr uninstall`,
+  `sudo make -C /opt/archminimal/archminimal-greeter revert`).
 - Credentials never go into these repos. The zsh installer moves any keys found in an old `~/.zshrc` into
   `~/.config/zsh/secrets.zsh` (mode 600); add new ones with `secret-add NAME`.
 
@@ -78,5 +92,5 @@ every command without running it, e.g. `make all DRY_RUN=1`.
 9. **desktop**: Hyprland packages, Bluetooth and power-profile services, config links; asks whether to install the camera kill
    switch (`make privacy`: a root helper + polkit rule; `make update` warns when it is out of date)
 10. **greeter**: greetd + the Quickshell login screen. It takes over from whatever display manager is active
-   (archinstall's Hyprland profile installs SDDM) and records it, so `sudo make -C ~/projects/archminimal-greeter revert`
-   can undo it. To uninstall SDDM entirely afterwards: `sudo make -C ~/projects/archminimal-greeter remove-sddm`.
+   (archinstall's Hyprland profile installs SDDM) and records it, so `sudo make -C /opt/archminimal/archminimal-greeter revert`
+   can undo it. To uninstall SDDM entirely afterwards: `sudo make -C /opt/archminimal/archminimal-greeter remove-sddm`.

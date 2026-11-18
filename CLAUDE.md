@@ -3,12 +3,13 @@
 Formerly `linux_setup` (renamed on GitHub; old URLs redirect).
 
 One command to set up the archminimal environment: clones the component repos (`zsh`, `tmux`, `nvim`,
-`archminimal-hypr`, `archminimal-greeter`) into `~/projects` and runs each one's own installer in order. Arch for
+`archminimal-hypr`, `archminimal-greeter`) into `/opt/archminimal` (ADR-0007: outside home, owned by the user) and runs each one's own installer in order. Arch for
 everything, macOS for the shell and editor parts. What each step does: `README.md`.
 
 ## Commands
 - `make <step>` calls `bin/setup <step>`; `DRY_RUN=1 make <step>` (or `bin/setup --dry-run <step>`) prints the
   commands without running them. Safe on macOS: `DRY_RUN=1 make doctor`, `make status`.
+- `make migrate`: moves clones from `~/projects` and relinks; only for machines set up before ADR-0007.
 - `make check` runs every cloned repo's own check/lint. `bash -n bin/setup` for syntax.
 
 ## Layout
@@ -24,5 +25,5 @@ everything, macOS for the shell and editor parts. What each step does: `README.m
   repo means updating `REPOS`, its `cmd_*`, `cmd_status`, `cmd_check` and the README table together; a
   GitHub rename (history kept) also gets an `old_name` entry. A copy into a fresh repo (like
   `sddm-login` → `archminimal-greeter`) must not: its history is unrelated, so pulling would fail.
-- Public repo: no machine names, keys or personal paths beyond `~/projects`.
+- Public repo: no machine names, keys or personal paths beyond `/opt/archminimal`.
 - Changes go through `github-flow` (squash only).

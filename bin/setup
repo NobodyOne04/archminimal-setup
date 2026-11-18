@@ -7,7 +7,7 @@
 #   doctor    check system, tools, GitHub access; print the plan
 #   base      base packages (git, make, base-devel/Xcode tools, openssh)
 #   packages  macOS: install everything in the Brewfile (brew bundle)
-#   repos     clone missing repos into $PROJECTS, fast-forward existing ones
+#   repos     create $PROJECTS (/opt/archminimal) if needed, clone missing repos, fast-forward the rest
 #   zsh       shell (zsh repo: deps, link, login shell)
 #   tmux      tmux (tmux repo: deps, link ~/.config/tmux, plugins)
 #   python    Python + uv (projects, venvs, CLI tools, other Python versions)
@@ -24,9 +24,11 @@
 #   packages-check  macOS: list packages installed but not in the Brewfile
 #   packages-clean  macOS: uninstall those (asks first)
 #   ssh-key   create an SSH key (if none) and show how to add it to GitHub
+#   migrate   move clones from ~/projects to $PROJECTS and relink everything (ADR-0007)
 set -euo pipefail
 
-PROJECTS=${PROJECTS:-$HOME/projects}
+# The repos live outside home, so home can be wiped and relinked (ADR-0007).
+PROJECTS=${PROJECTS:-/opt/archminimal}
 GIT_BASE=${GIT_BASE:-git@github.com:NobodyOne04}
 REPOS=(zsh tmux nvim archminimal-hypr archminimal-greeter)
 
@@ -172,7 +174,7 @@ cmd_packages_clean() {
 
 cmd_repos() {
   step "repositories"
-  run mkdir -p "$PROJECTS"
+  cmd_folder
   local r d
   for r in "${REPOS[@]}"; do
     d=$(repo_dir "$r")
@@ -189,6 +191,53 @@ cmd_repos() {
       run git clone --quiet "$(repo_url "$r")" "$d" && ok "$r cloned"
     fi
   done
+}
+
+# $PROJECTS is a system folder owned by the user: created once with sudo, then
+# pulls and edits need none.
+cmd_folder() {
+  if [[ -d $PROJECTS && -w $PROJECTS ]]; then return 0; fi
+  info "the repos live in ${PROJECTS/#$HOME/\~}, outside home; creating it needs sudo once"
+  if [[ $PROJECTS == "$HOME"/* ]]; then run mkdir -p "$PROJECTS"
+  else run sudo install -d -o "$USER" -g "$(id -gn)" "$PROJECTS"; fi
+}
+
+# Move clones from the old ~/projects to $PROJECTS, then relink every part so
+# the links in home point at the new place. The setup repo itself moves last.
+cmd_migrate() {
+  local old=${OLD_PROJECTS:-$HOME/projects} r src dst me
+  step "migrate ${old/#$HOME/\~} → $PROJECTS"
+  [[ $old != "$PROJECTS" ]] || die "nothing to do: PROJECTS is already $old"
+  cmd_folder
+  me=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+  for r in "${REPOS[@]}" archminimal-setup; do
+    src=$(PROJECTS=$old repo_dir "$r")
+    [[ -d $src/.git ]] || continue
+    dst=$PROJECTS/$r
+    if [[ -e $dst ]]; then warn "$r: $dst already exists; ${src/#$HOME/\~} left in place"; continue; fi
+    [[ $src == "$me" ]] && continue
+    run mv "$src" "$dst" && ok "$r → $dst"
+  done
+  # our old links: removed here, so the link steps don't keep them as .bak files
+  local l
+  while IFS= read -r l; do
+    run rm "$l"
+  done < <(find "$HOME/.zshrc" "${XDG_CONFIG_HOME:-$HOME/.config}" "$HOME/.local/bin" -maxdepth 3 -type l \
+             -lname "$old/*" 2>/dev/null || true)
+  step "relink"
+  local d
+  d=$(repo_dir zsh);  [[ -d $d/.git ]] && run make -C "$d" link
+  d=$(repo_dir tmux); [[ -d $d/.git ]] && run make -C "$d" link
+  d=$(repo_dir nvim); [[ -d $d/.git ]] && run make -C "$d" link
+  if (( IS_ARCH )); then
+    d=$(repo_dir archminimal-hypr); [[ -d $d/.git ]] && run make -C "$d" install
+  fi
+  if [[ $me == "$old"/* && ! -e $PROJECTS/archminimal-setup ]]; then
+    run mv "$me" "$PROJECTS/archminimal-setup" && ok "archminimal-setup → $PROJECTS/archminimal-setup"
+  fi
+  step "done"
+  info "restart the shell (make -C $PROJECTS/archminimal-hypr restart-shell) and open a new terminal"
+  info "then: cd $PROJECTS/archminimal-setup; ${old/#$HOME/\~} can be removed once empty"
 }
 
 cmd_zsh() {
@@ -397,7 +446,7 @@ while [[ $# -gt 0 ]]; do
 done
 cmd=${1:-}; [[ -n $cmd ]] || { usage; exit 2; }
 case $cmd in
-  doctor|base|repos|zsh|tmux|python|go|nvim|claude|desktop|greeter|all|status|update|check) "cmd_$cmd" ;;
+  doctor|base|repos|zsh|tmux|python|go|nvim|claude|desktop|greeter|all|status|update|check|migrate) "cmd_$cmd" ;;
   ssh-key) cmd_ssh_key ;;
   packages) cmd_packages ;;
   packages-check) cmd_packages_check ;;
