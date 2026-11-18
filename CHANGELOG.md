@@ -6,6 +6,7 @@
 - Decision records in `docs/adr/`: six ADRs for the repo's existing decisions
 
 ### Changed
+- Desktop step asks to install the camera kill switch (`make privacy`); `make update` warns when it is out of date
 - Renamed `linux_setup` → `archminimal-setup`, and the desktop repo `hyprland` → `archminimal-hypr` (both renamed
   on GitHub: history kept, old URLs redirect). `setup repos` finds an old `hyprland` clone and points its origin
   at `archminimal-hypr`; the folder name doesn't matter

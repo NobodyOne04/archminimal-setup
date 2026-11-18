@@ -271,6 +271,10 @@ cmd_desktop() {
   local d; d=$(require_repo archminimal-hypr)
   run make -C "$d" deps
   run make -C "$d" install
+  # optional root piece: a helper + polkit rule, so it gets its own question
+  if confirm "install the camera kill switch (root helper + polkit rule, Super+Shift+C)?"; then
+    run make -C "$d" privacy
+  fi
   info "log in to Hyprland (or run 'make -C ${d/#$HOME/\~} reload' inside it)"
 }
 
@@ -344,6 +348,12 @@ cmd_update() {
   d=$(repo_dir nvim); [[ -d $d/.git ]] && run make -C "$d" sync
   d=$(repo_dir zsh);  [[ -d $d/.git ]] && run make -C "$d" update
   d=$(repo_dir tmux); [[ -d $d/.git ]] && run make -C "$d" update
+  # the camera switch is copied as root, so a pull doesn't update it
+  d=$(repo_dir archminimal-hypr)
+  if [[ -x /usr/local/bin/archminimal-camera && -f $d/bin/archminimal-camera ]] &&
+     ! cmp -s /usr/local/bin/archminimal-camera "$d/bin/archminimal-camera"; then
+    warn "camera switch changed: run 'sudo make -C ${d/#$HOME/\~} privacy'"
+  fi
   return 0
 }
 
