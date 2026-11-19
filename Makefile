@@ -52,5 +52,5 @@ snapshot: ## Read-only btrfs snapshot of / without /home (LABEL=name to tag it)
 	@$(SETUP) snapshot $(LABEL)
 remove-sddm: ## Snapshot /, then wipe SDDM: packages, config, state, user (Arch)
 	@$(SETUP) remove-sddm
-migrate: ## Move clones from ~/projects to /opt/archminimal and relink everything
+migrate: ## Move clones from ~/projects and downloaded plugins out of home, relink everything
 	@$(SETUP) migrate

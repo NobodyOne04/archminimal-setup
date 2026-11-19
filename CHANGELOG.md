@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- Plugins live in `/opt/archminimal/plugins`, outside home; `make migrate` moves the ones already downloaded
 - `make git` (also in `make all`, after base): git name/email in `~/.gitconfig`; on Linux the ssh-agent socket
   and `~/.ssh/config` lines so a key's passphrase is asked once per login
 - `make snapshot`: read-only btrfs snapshot of `/` without `/home`, beside the root subvolume in `snapshots/`

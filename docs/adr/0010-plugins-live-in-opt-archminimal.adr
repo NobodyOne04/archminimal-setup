@@ -1,0 +1,49 @@
+# 0010. Plugins live in /opt/archminimal/plugins, set in each tool's config
+
+- Status: Accepted
+- Date: 2026-11-18
+
+Plugins, language servers and parsers that zsh, tmux and nvim download go to
+`/opt/archminimal/plugins/<tool>` instead of `~/.local/share`. Each tool's config names that path
+directly, so wiping home costs nothing, not even a re-download. Follows
+[0007](0007-repos-live-in-opt-archminimal.adr).
+
+## Technical details
+- **Problem**: after 0007 the configs live outside home, but about 440 MB of plugins still sit in
+  `~/.local/share` (nvim lazy 220 MB, mason 171 MB, parsers 26 MB, zinit 20 MB, tmux 3.5 MB). Wiping home
+  means re-downloading and rebuilding all of it before the editor and shell work fully again.
+- **Folder**: `/opt/archminimal/plugins/{nvim,zinit,tmux}`, inside the user-owned `0700` folder from 0007,
+  next to the repos; not a repo itself. Same path on macOS. Created by the tools on first use; the
+  folder itself by `setup repos` (0007).
+- **Path in one place**: the zsh repo exports `ARCHMINIMAL_PLUGINS=/opt/archminimal/plugins`
+  (`conf.d/00-env.zsh`, overridable from the environment; `local.zsh` loads too late); the others fall back to that path when it is unset
+  (nvim started outside zsh, tmux server started by the desktop).
+- **zsh** (`conf.d/20-plugins.zsh`): `ZINIT[HOME_DIR]=$ARCHMINIMAL_PLUGINS/zinit`.
+- **tmux** (`conf/plugins.conf`): `TMUX_PLUGIN_MANAGER_PATH` = `…/plugins/tmux/`; the tpm bootstrap
+  clones there.
+- **nvim**: `lua/config/lazy.lua` lazy `root` and `rocks.root` = `…/plugins/nvim/lazy`, `…/lazy-rocks`;
+  mason `install_root_dir` = `…/plugins/nvim/mason`; nvim-treesitter (`main`) `install_dir` =
+  `…/plugins/nvim/site` (added to `runtimepath`); the molten Python host (`python-host`, Makefile
+  `notebook` target and `g:python3_host_prog`) = `…/plugins/nvim/python-host`. `lazy-lock.json` stays in
+  the repo; lazy's small state files and `rplugin.vim` stay in `~/.local/{share,state}/nvim` and are rebuilt.
+- **Migration**: `setup migrate` gains a step: moves each existing folder (`~/.local/share/nvim/{lazy,
+  mason,site}`, `~/.local/share/zinit`, `~/.local/share/tmux/plugins`) to its new place if the target
+  doesn't exist, and rewrites mason's links and command wrappers, which name the old folder. The python
+  host and lazy's Lua rocks have the old path built in (venv scripts, compiled luarocks paths), so they
+  are rebuilt in the new place (`make notebook`, `make sync`): a small download, the rest is reused. Run after pulling the zsh, tmux and
+  nvim changes; open a new terminal and restart nvim and tmux after.
+- **Stays in home** (deliberately): caches (`~/.cache/zsh`, nvim swap / undo / shada), and personal
+  data that is not a plugin (atuin history, `~/.ssh`, `secrets.zsh`, `local.zsh`, `~/.config/hypr/local.lua`).
+  Caches rebuild themselves; personal data is a separate decision (see below).
+- **Order**: zsh (exports the path) → tmux, nvim → this repo (migration + docs); one PR each, each
+  referencing this ADR.
+- **Consequences**: + home holds only links, caches and personal data; nothing in it needs a download to
+  rebuild. − four repos carry the path; a tool updated to a new plugin location default needs its
+  setting checked; nvim needs four settings instead of one, since Neovim has no per-app data dir short of
+  changing `XDG_DATA_HOME`.
+
+## Technologies and alternatives
+- Involved: zinit, tpm, lazy.nvim, mason.nvim, nvim-treesitter (`main`), uv (python host).
+- Alternatives: `XDG_DATA_HOME=/opt/archminimal/…` for everything: moves every app's personal data
+  (atuin history, keyrings) out of home too; a link `~/.local/share/nvim` → `/opt/…`: works, but the link
+  is lost with home and plugins are not found until `make install` runs again.
