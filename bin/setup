@@ -27,7 +27,8 @@
 #   packages-check  macOS: list packages installed but not in the Brewfile
 #   packages-clean  macOS: uninstall those (asks first)
 #   ssh-key   create an SSH key (if none) and show how to add it to GitHub
-#   migrate   move clones from ~/projects to $PROJECTS and relink everything (ADR-0007)
+#   migrate   move clones from ~/projects to $PROJECTS and relink everything (ADR-0007),
+#             then move downloaded plugins out of home (ADR-0010)
 #   snapshot [label]  read-only btrfs snapshot of / without /home (ADR-0008)
 #   remove-sddm  snapshot, then wipe SDDM: packages, config, state, user (Arch)
 set -euo pipefail
@@ -292,9 +293,47 @@ cmd_migrate() {
   if [[ $me == "$old"/* && ! -e $PROJECTS/archminimal-setup ]]; then
     run mv "$me" "$PROJECTS/archminimal-setup" && ok "archminimal-setup → $PROJECTS/archminimal-setup"
   fi
+  migrate_plugins
   step "done"
   info "restart the shell (make -C $PROJECTS/archminimal-hypr restart-shell) and open a new terminal"
   info "then: cd $PROJECTS/archminimal-setup; ${old/#$HOME/\~} can be removed once empty"
+}
+
+# Plugins that zsh, tmux and nvim downloaded into home move next to the repos
+# (ADR-0010), so nothing is downloaded again. Needs the zsh, tmux and nvim
+# versions that read $ARCHMINIMAL_PLUGINS (pulled by `setup update`).
+migrate_plugins() {
+  local p=${ARCHMINIMAL_PLUGINS:-} data=${XDG_DATA_HOME:-$HOME/.local/share} pair src dst d
+  # a shell started before $PROJECTS existed exported the old home path: the plugins still move
+  [[ -n $p && $p != "$data" ]] || p=$PROJECTS/plugins
+  step "plugins → $p"
+  for pair in zinit:zinit tmux/plugins:tmux nvim/lazy:nvim/lazy nvim/mason:nvim/mason nvim/site:nvim/site; do
+    src=$data/${pair%%:*} dst=$p/${pair#*:}
+    [[ -d $src ]] || continue
+    if [[ -e $dst ]]; then warn "${dst/#$HOME/\~} already exists; ${src/#$HOME/\~} left in place"; continue; fi
+    run mkdir -p "$(dirname "$dst")"
+    run mv "$src" "$dst" && ok "${src/#$HOME/\~} → $dst"
+  done
+  # mason's links and command wrappers name the old folder
+  if [[ -d $p/nvim/mason ]] && (( ! DRY_RUN )); then
+    local l t
+    while IFS= read -r l; do t=$(readlink "$l"); ln -sfn "$p/nvim${t#"$data/nvim"}" "$l"; done \
+      < <(find "$p/nvim/mason" -type l -lname "$data/nvim/*")
+    grep -rIl "$data/nvim" "$p/nvim/mason" 2>/dev/null | while IFS= read -r t; do
+      sed -i.bak "s|$data/nvim|$p/nvim|g" "$t" && rm -f "$t.bak"
+    done
+  fi
+  # the python host and lazy's Lua rocks have the old path built in: rebuilt in the new place
+  d=$(repo_dir nvim)
+  if [[ -d $data/nvim/python-host ]]; then
+    run rm -rf "$data/nvim/python-host"
+    [[ -d $d/.git ]] && run make -C "$d" notebook
+  fi
+  if [[ -d $data/nvim/lazy-rocks ]]; then
+    run rm -rf "$data/nvim/lazy-rocks"
+    [[ -d $d/.git ]] && run make -C "$d" sync
+  fi
+  return 0
 }
 
 cmd_zsh() {

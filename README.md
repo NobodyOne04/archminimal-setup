@@ -49,7 +49,8 @@ cd ~/projects/archminimal-setup && git pull && make migrate
 ```
 
 It moves every clone (uncommitted work included), relinks the configs in home, moves this repo last and leaves
-`~/projects` to delete.
+`~/projects` to delete. Then it moves the plugins zsh, tmux and nvim downloaded (`~/.local/share/{zinit,tmux,nvim}`)
+to `/opt/archminimal/plugins` (ADR-0010); pull the repos first (`make update`) so they look there.
 
 ## Everyday
 
@@ -69,6 +70,8 @@ It moves every clone (uncommitted work included), relinks the configs in home, m
 ## How it works
 
 - `bin/setup` does the work; the Makefile only forwards to it (`./bin/setup --help` lists the commands).
+- Plugins (zinit, tpm, lazy.nvim, mason, treesitter parsers) live in `/opt/archminimal/plugins` too, so wiping
+  home costs no download.
 - Repos live in `/opt/archminimal` (`PROJECTS=...` to change), outside home: everything in home is a link into it
   or a rebuildable cache, so home can be wiped and `make all` puts it back. An existing clone is found by its `origin` URL, so a repo
   cloned under another folder name is reused, never cloned twice.
