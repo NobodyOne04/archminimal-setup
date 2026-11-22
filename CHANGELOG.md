@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Fixed
+- Security: a repo is found by owner and name in its origin, not name alone, and a step that runs `sudo make` refuses a repo or `$PROJECTS` folder not owned by you (Codex audit)
+
 ### Added
 - Plugins live in `/opt/archminimal/plugins`, outside home; `make migrate` moves the ones already downloaded
 - `make git` (also in `make all`, after base): git name/email in `~/.gitconfig`; on Linux the ssh-agent socket

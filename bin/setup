@@ -76,13 +76,16 @@ old_name() {
 
 # Where a repo lives: an existing clone anywhere in $PROJECTS whose origin
 # matches (so differently named folders are reused), else $PROJECTS/<name>.
+# Owner and name must both match (ssh or https): a clone of someone else's
+# repo with the same name must never be picked, since `setup greeter` runs
+# `sudo make` in it.
 repo_dir() {
-  local name=$1 old d url
+  local name=$1 old d url owner=${GIT_BASE##*[:/]}
   old=$(old_name "$name")
   for d in "$PROJECTS"/*/; do
     url=$(git -C "$d" remote get-url origin 2>/dev/null) || continue
     url=${url%.git}
-    if [[ $url == */$name || ( -n $old && $url == */$old ) ]]; then echo "${d%/}"; return; fi
+    if [[ $url == *[:/]$owner/$name || ( -n $old && $url == *[:/]$owner/$old ) ]]; then echo "${d%/}"; return; fi
   done
   echo "$PROJECTS/$name"
 }
@@ -92,6 +95,8 @@ repo_url() { echo "$GIT_BASE/$1.git"; }
 require_repo() {
   local d; d=$(repo_dir "$1")
   [[ -d $d/.git ]] || (( DRY_RUN )) || die "$1 is not cloned yet: run 'setup repos' first."
+  # some steps run `sudo make` in it: nobody else may be able to swap its files
+  [[ -O $PROJECTS && -O $d ]] || (( DRY_RUN )) || die "$d or $PROJECTS is not owned by $USER: fix with 'sudo chown $USER' before running this step."
   echo "$d"
 }
 
