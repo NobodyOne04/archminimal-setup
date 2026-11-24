@@ -14,7 +14,8 @@ everything, macOS for the shell and editor parts. What each step does: `README.m
 
 ## Layout
 - `bin/setup`: all logic. `REPOS=(…)` is the repo list; `repo_dir` finds a clone anywhere in `$PROJECTS` by
-  its origin URL (or a pre-rename name from `old_name`, which `setup repos` then re-points); one `cmd_<step>` function per step.
+  its origin URL (or a pre-rename name from `old_name`, which `setup repos` then re-points); `refuse_foreign` stops on another repo's checkout at the fallback
+  `$PROJECTS/<name>`; one `cmd_<step>` function per step.
 - `Makefile`: thin wrappers with help text. `Brewfile`: macOS packages.
 - `docs/adr/`: decision records (`NNNN-*.adr`, index `README.md`); read the one for a decision before changing it.
 

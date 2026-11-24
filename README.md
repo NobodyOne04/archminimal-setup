@@ -58,10 +58,10 @@ to `/opt/archminimal/plugins` (ADR-0010); pull the repos first (`make update`) s
 |---|---|
 | `make status` | each repo's branch, unpushed or uncommitted work, whether its links are in place; tool versions |
 | `make update` | pull every repo (fast-forward only; repos with local changes are left alone), update plugins |
-| `make check` | run each repo's own checks (zsh startup, nvim startup, Hyprland and greeter lint) |
+| `make check` | run each repo's own checks (zsh startup, nvim startup, Hyprland and greeter lint); fails if a repo isn't cloned |
 | `make zsh` / `tmux` / `python` / `go` / `nvim` / `claude` / `desktop` | (re)install one part |
 | `make snapshot` | read-only btrfs snapshot of `/` without `/home`, in `snapshots/` at the top of the filesystem (`LABEL=name` to tag it) |
-| `make remove-sddm` | after the greeter step: snapshot `/`, then remove SDDM completely (packages, config, state, logs, the `sddm` user, `~/.local/share/sddm`) |
+| `make remove-sddm` | from a terminal in the desktop the new login screen started: snapshot `/`, then remove SDDM completely (packages, config, state, logs, the `sddm` user, `~/.local/share/sddm`) |
 | `make git` | set the git name/email in `~/.gitconfig` and the ssh-agent (not `git config --global`: that writes into the zsh repo) |
 | `make ssh-key` | create a key if missing and show where to add it |
 | `make packages` | macOS: install everything in the `Brewfile` |
@@ -85,8 +85,10 @@ to `/opt/archminimal/plugins` (ADR-0010); pull the repos first (`make update`) s
 ## Order of `make all`
 
 1. **doctor**: git, make, curl, ssh, GitHub access, where each repo will live
-   **snapshot**: read-only btrfs snapshot of `/` without `/home` (`snapshots/root-<date>-pre-setup-all`); skipped when `/` is not btrfs
-2. **base**: `pacman -Syu --needed git make base-devel openssh curl`
+   **snapshot**: read-only btrfs snapshot of `/` without `/home` (`snapshots/root-<date>-pre-setup-all`); skipped when `/` is not btrfs; installs `btrfs-progs` first if missing
+2. **base**: `pacman -Syu --needed git make base-devel openssh curl`, plus CPU microcode (`intel-ucode` or
+   `amd-ucode`) and, with Intel graphics, `linux-firmware-intel intel-media-driver vulkan-intel sof-firmware`
+   (GPU firmware, video decoding, Vulkan, and the audio DSP firmware Intel laptops need for speakers and mic)
    **git**: your name and email in `~/.gitconfig` (asks, or `GIT_NAME=… GIT_EMAIL=…`); on Linux the systemd
    `ssh-agent.socket` plus an `AddKeysToAgent` / `IdentityAgent` block in `~/.ssh/config`, so a key's
    passphrase is asked once per login
@@ -104,5 +106,7 @@ to `/opt/archminimal/plugins` (ADR-0010); pull the repos first (`make update`) s
 10. **greeter**: greetd + the Quickshell login screen. It takes over from whatever display manager is active
    (archinstall's Hyprland profile installs SDDM) and records it, so `sudo make -C /opt/archminimal/archminimal-greeter revert`
    can undo it.
-11. **remove-sddm**: lists what is left of SDDM and, once you confirm, removes it completely (packages and their
+11. **remove-sddm**: on the first run it only says to reboot and log in through the new screen; SDDM stays as
+   the way back until then. Run `make remove-sddm` from a terminal in the Hyprland session greetd started: it
+   lists what is left of SDDM and, once you confirm, removes it completely (packages and their
    cached downloads, config, state, logs, the `sddm` user); the snapshot from step 1 is the way back. Nothing to do on a machine without SDDM
