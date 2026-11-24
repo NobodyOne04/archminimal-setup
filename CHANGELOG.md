@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Fixed
+- Fresh install (Codex audit): `make all` no longer stops at the snapshot when `btrfs-progs` is missing; base installs CPU microcode and Intel GPU and audio firmware; SDDM is removed only from a desktop the new login screen started; a checkout of another repo (host, owner and name checked) is refused; a failed pull stops the run; rollback steps are right for a top-level `/` and a `/home` folder; `make check` fails when a repo is missing
 - Security: a repo is found by owner and name in its origin, not name alone, and a step that runs `sudo make` refuses a repo or `$PROJECTS` folder not owned by you (Codex audit)
 
 ### Added

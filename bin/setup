@@ -79,15 +79,43 @@ old_name() {
 # Owner and name must both match (ssh or https): a clone of someone else's
 # repo with the same name must never be picked, since `setup greeter` runs
 # `sudo make` in it.
-repo_dir() {
-  local name=$1 old d url owner=${GIT_BASE##*[:/]}
+# host/owner/name of a git URL, whichever form: git@host:o/n, ssh://git@host/o/n,
+# https://[user[:token]@]host/o/n
+# user info is stripped from the host part only: an @ in the path must not count
+url_path() {
+  local u=${1%.git} host
+  if [[ $u =~ ^(ssh|https|git):// ]]; then u=${u#*://}; host=${u%%/*}; u=${u#*/}
+  elif [[ $u == *://* ]]; then return 1                # file:// and others: never a match
+  elif [[ $u == /* ]]; then echo "$u"; return          # a local mirror
+  else host=${u%%:*}; u=${u#*:}; fi
+  # anything but [user@]host[:port] and a plain path is refused: ?, # or a second @
+  # would make the host compared here differ from the one git contacts
+  [[ $host =~ ^([A-Za-z0-9._%:-]+@)?[A-Za-z0-9.-]+(:[0-9]+)?$ && $u =~ ^[A-Za-z0-9._/-]+$ ]] || return 1
+  echo "${host##*@}/$u"
+}
+
+is_ours() {
+  local d=$1 name=$2 old url base
   old=$(old_name "$name")
+  url=$(url_path "$(git -C "$d" remote get-url origin 2>/dev/null)") || return 1
+  base=$(url_path "$GIT_BASE")
+  [[ $url == "$base/$name" || ( -n $old && $url == "$base/$old" ) ]]
+}
+
+repo_dir() {
+  local name=$1 d
   for d in "$PROJECTS"/*/; do
-    url=$(git -C "$d" remote get-url origin 2>/dev/null) || continue
-    url=${url%.git}
-    if [[ $url == *[:/]$owner/$name || ( -n $old && $url == *[:/]$owner/$old ) ]]; then echo "${d%/}"; return; fi
+    if is_ours "$d" "$name"; then echo "${d%/}"; return; fi
   done
   echo "$PROJECTS/$name"
+}
+
+# The fallback path of repo_dir can hold a checkout of another repo: never
+# re-point, pull or `sudo make` in it.
+refuse_foreign() {
+  [[ -e $1/.git ]] && ! is_ours "$1" "$2" &&
+    die "$1 is a checkout of another repo (its origin isn't $(url_path "$GIT_BASE")/$2): move it away, then run 'setup repos'."
+  return 0
 }
 
 repo_url() { echo "$GIT_BASE/$1.git"; }
@@ -95,6 +123,7 @@ repo_url() { echo "$GIT_BASE/$1.git"; }
 require_repo() {
   local d; d=$(repo_dir "$1")
   [[ -d $d/.git ]] || (( DRY_RUN )) || die "$1 is not cloned yet: run 'setup repos' first."
+  refuse_foreign "$d" "$1"
   # some steps run `sudo make` in it: nobody else may be able to swap its files
   [[ -O $PROJECTS && -O $d ]] || (( DRY_RUN )) || die "$d or $PROJECTS is not owned by $USER: fix with 'sudo chown $USER' before running this step."
   echo "$d"
@@ -131,6 +160,10 @@ cmd_doctor() {
   fi
   if [[ -n $(git config --file "$GITCONFIG" user.email 2>/dev/null) ]]; then ok "git identity: $(git config --file "$GITCONFIG" user.name) <$(git config --file "$GITCONFIG" user.email)>"
   else info "git identity not set: 'setup git' asks for it"; fi
+  if (( IS_ARCH )); then
+    local hw missing_hw=(); for hw in $(hardware_packages); do pacman -Q "$hw" >/dev/null 2>&1 || missing_hw+=("$hw"); done
+    if (( ${#missing_hw[@]} )); then info "hardware packages missing (setup base installs them): ${missing_hw[*]}"; else ok "microcode and hardware packages"; fi
+  fi
   if [[ $OS == linux ]] && ! (( IS_ARCH )); then warn "not Arch: zsh and nvim work, desktop and greeter do not"; fi
   local r; for r in "${REPOS[@]}"; do
     local d; d=$(repo_dir "$r")
@@ -143,10 +176,24 @@ cmd_doctor() {
   (( missing == 0 )) || info "fix the items marked ! before 'setup all' (or run 'setup base' first)"
 }
 
+# CPU microcode, and for Intel graphics its firmware, video decoding (VA-API),
+# Vulkan and the audio DSP firmware (Intel laptops: no speakers or mic without it).
+hardware_packages() {
+  grep -q GenuineIntel /proc/cpuinfo 2>/dev/null && echo intel-ucode sof-firmware
+  grep -q AuthenticAMD /proc/cpuinfo 2>/dev/null && echo amd-ucode
+  # PCI display controllers (class 0x03xxxx), so it works before the GPU driver binds
+  local dev
+  for dev in /sys/bus/pci/devices/*; do
+    [[ $(cat "$dev/vendor" 2>/dev/null) == 0x8086 && $(cat "$dev/class" 2>/dev/null) == 0x03* ]] &&
+      { echo linux-firmware-intel intel-media-driver vulkan-intel; break; }
+  done
+  return 0
+}
+
 cmd_base() {
   step "base packages"
   if (( IS_ARCH )); then
-    run sudo pacman -Syu --needed git make base-devel openssh curl
+    run sudo pacman -Syu --needed git make base-devel openssh curl $(hardware_packages)
   elif [[ $OS == mac ]]; then
     xcode-select -p >/dev/null 2>&1 || run xcode-select --install
     command -v brew >/dev/null || die "install Homebrew first: https://brew.sh"
@@ -235,6 +282,7 @@ cmd_repos() {
   local r d
   for r in "${REPOS[@]}"; do
     d=$(repo_dir "$r")
+    refuse_foreign "$d" "$r"
     if [[ -d $d/.git ]]; then
       if [[ $(git -C "$d" remote get-url origin) != "$(repo_url "$r")" ]]; then
         run git -C "$d" remote set-url origin "$(repo_url "$r")" && ok "$r: origin now $(repo_url "$r") (renamed)"
@@ -242,10 +290,12 @@ cmd_repos() {
       if [[ -n $(git -C "$d" status --porcelain) ]]; then
         warn "$r: local changes, not pulling (${d/#$HOME/\~})"
       else
-        run git -C "$d" pull --ff-only --quiet && ok "$r up to date"
+        run git -C "$d" pull --ff-only --quiet || die "$r: pull failed (${d/#$HOME/\~})"
+        ok "$r up to date"
       fi
     else
-      run git clone --quiet "$(repo_url "$r")" "$d" && ok "$r cloned"
+      run git clone --quiet "$(repo_url "$r")" "$d" || die "$r: clone failed"
+      ok "$r cloned"
     fi
   done
 }
@@ -273,9 +323,16 @@ cmd_migrate() {
   [[ $old != "$PROJECTS" ]] || die "nothing to do: PROJECTS is already $old"
   cmd_folder
   me=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+  # before anything moves or a link goes: a checkout of another repo (a fork)
+  # would be left behind with its links removed
+  for r in "${REPOS[@]}"; do
+    for src in "$old/$r" "$PROJECTS/$r"; do
+      [[ -e $src/.git ]] && ! is_ours "$src" "$r" && die "$src is not $r from $(url_path "$GIT_BASE"): move it away first, nothing was changed"
+    done
+  done
   for r in "${REPOS[@]}" archminimal-setup; do
     src=$(PROJECTS=$old repo_dir "$r")
-    [[ -d $src/.git ]] || continue
+    [[ -d $src/.git ]] && is_ours "$src" "$r" || continue   # a plain clone of ours: worktrees can't be moved by mv
     dst=$PROJECTS/$r
     if [[ -e $dst ]]; then warn "$r: $dst already exists; ${src/#$HOME/\~} left in place"; continue; fi
     [[ $src == "$me" ]] && continue
@@ -289,11 +346,11 @@ cmd_migrate() {
              -lname "$old/*" 2>/dev/null || true)
   step "relink"
   local d
-  d=$(repo_dir zsh);  [[ -d $d/.git ]] && run make -C "$d" link
-  d=$(repo_dir tmux); [[ -d $d/.git ]] && run make -C "$d" link
-  d=$(repo_dir nvim); [[ -d $d/.git ]] && run make -C "$d" link
+  d=$(repo_dir zsh);  is_ours "$d" zsh && run make -C "$d" link
+  d=$(repo_dir tmux); is_ours "$d" tmux && run make -C "$d" link
+  d=$(repo_dir nvim); is_ours "$d" nvim && run make -C "$d" link
   if (( IS_ARCH )); then
-    d=$(repo_dir archminimal-hypr); [[ -d $d/.git ]] && run make -C "$d" install
+    d=$(repo_dir archminimal-hypr); is_ours "$d" archminimal-hypr && run make -C "$d" install
   fi
   if [[ $me == "$old"/* && ! -e $PROJECTS/archminimal-setup ]]; then
     run mv "$me" "$PROJECTS/archminimal-setup" && ok "archminimal-setup → $PROJECTS/archminimal-setup"
@@ -332,11 +389,11 @@ migrate_plugins() {
   d=$(repo_dir nvim)
   if [[ -d $data/nvim/python-host ]]; then
     run rm -rf "$data/nvim/python-host"
-    [[ -d $d/.git ]] && run make -C "$d" notebook
+    is_ours "$d" nvim && run make -C "$d" notebook
   fi
   if [[ -d $data/nvim/lazy-rocks ]]; then
     run rm -rf "$data/nvim/lazy-rocks"
-    [[ -d $d/.git ]] && run make -C "$d" sync
+    is_ours "$d" nvim && run make -C "$d" sync
   fi
   return 0
 }
@@ -459,15 +516,20 @@ cmd_snapshot() {
   [[ $OS == linux ]] || die "snapshot: Linux only"
   local fstype; fstype=$(findmnt -no FSTYPE /)
   [[ $fstype == btrfs ]] || die "/ is $fstype, not btrfs: no snapshot"
-  command -v btrfs >/dev/null || die "btrfs-progs missing: sudo pacman -S btrfs-progs"
-  local src dev subvol name dst home_in_root=0
+  if ! command -v btrfs >/dev/null; then
+    (( IS_ARCH )) || die "btrfs-progs missing"
+    run sudo pacman -S --needed btrfs-progs
+  fi
+  local src dev subvol name dst home_in_root=0 home_nested=0
   src=$(findmnt -no SOURCE /); dev=${src%%\[*}
   subvol=$(findmnt -no FSROOT /)        # e.g. /root or /@; / when root is the top level
   # /home left out: a separate mount or its own subvolume (inode 256) is never
   # part of a btrfs snapshot; a plain folder in the root subvolume is emptied
   # in the snapshot before it is made read-only.
   if findmnt -n /home >/dev/null 2>&1; then info "/home is a separate mount: not in the snapshot"
-  elif [[ $(stat -c %i /home 2>/dev/null) == 256 ]]; then info "/home is its own subvolume: not in the snapshot"
+  elif [[ $(stat -c %i /home 2>/dev/null) == 256 ]]; then
+    home_nested=1
+    info "/home is its own subvolume: not in the snapshot"
   else home_in_root=1; info "/home is a folder in the root subvolume: emptied in the snapshot"; fi
   label=${label//[^A-Za-z0-9_.-]/-}
   name=root-$(date +%Y-%m-%d_%H%M%S)${label:+-$label}
@@ -489,8 +551,16 @@ cmd_snapshot() {
   ok "snapshots/$name on $dev (read-only; root subvolume: $subvol)"
   info "list:     sudo btrfs subvolume list -s /"
   info "browse:   sudo mount -o subvol=snapshots/$name,ro $dev /mnt"
-  info "rollback: from a live USB mount $dev with subvolid=5, mv ${subvol#/} ${subvol#/}.broken,"
-  info "          btrfs subvolume snapshot snapshots/$name ${subvol#/}, reboot"
+  if [[ $subvol == / ]]; then
+    # a copy back with --delete would empty nested subvolumes (absent from the snapshot)
+    warn "rollback: / is the btrfs top level, so it can't be swapped by a rename: restore files by hand"
+    warn "          from snapshots/$name (sudo mount -o subvol=snapshots/$name,ro $dev /mnt)"
+  else
+    info "rollback: from a live USB mount $dev with subvolid=5, mv ${subvol#/} ${subvol#/}.broken,"
+    info "          btrfs subvolume snapshot snapshots/$name ${subvol#/},"
+    (( home_in_root || home_nested )) && info "          rmdir ${subvol#/}/home && mv ${subvol#/}.broken/home ${subvol#/}/home  (your files),"
+    info "          reboot"
+  fi
 }
 
 # ---------- SDDM ----------
@@ -525,6 +595,14 @@ cmd_remove_sddm() {
   fi
   local left; left=$(sddm_leftovers)
   if [[ -z $left ]]; then ok "nothing of SDDM is left"; return 0; fi
+  # SDDM is the way back until the new screen has logged you in to a working
+  # desktop: so only from a Hyprland session that greetd started
+  local via; via=$(loginctl show-session "${XDG_SESSION_ID:-}" -p Service --value 2>/dev/null || true)
+  if [[ $via != greetd || -z ${HYPRLAND_INSTANCE_SIGNATURE:-} ]]; then
+    info "SDDM stays until the new login screen has started your desktop:"
+    info "reboot, log in, then run 'setup remove-sddm' from a terminal there"
+    return 0
+  fi
   printf '%s\n' "$left" | sed 's/^/    /'
   confirm "remove all of the above (after a btrfs snapshot of /)?" || { info "nothing removed"; return 0; }
   if [[ -n $SNAP_TAKEN ]]; then info "snapshot from this run: snapshots/$SNAP_TAKEN"
@@ -582,7 +660,8 @@ cmd_status() {
   for r in "${REPOS[@]}"; do
     d=$(repo_dir "$r")
     step "$r"
-    if [[ ! -d $d/.git ]]; then info "not cloned"; continue; fi
+    if [[ ! -e $d/.git ]]; then info "not cloned"; continue; fi
+    if ! is_ours "$d" "$r"; then warn "${d/#$HOME/\~} is another repo: not looked at"; continue; fi
     git -C "$d" fetch --quiet 2>/dev/null || true
     info "$(git -C "$d" status -sb | head -1)   ${d/#$HOME/\~}"
     local changes; changes=$(git -C "$d" status --porcelain | wc -l | tr -d ' ')
@@ -610,9 +689,9 @@ cmd_update() {
   cmd_repos
   step "plugins"
   local d
-  d=$(repo_dir nvim); [[ -d $d/.git ]] && run make -C "$d" sync
-  d=$(repo_dir zsh);  [[ -d $d/.git ]] && run make -C "$d" update
-  d=$(repo_dir tmux); [[ -d $d/.git ]] && run make -C "$d" update
+  d=$(repo_dir nvim); is_ours "$d" nvim && run make -C "$d" sync
+  d=$(repo_dir zsh);  is_ours "$d" zsh && run make -C "$d" update
+  d=$(repo_dir tmux); is_ours "$d" tmux && run make -C "$d" update
   # the camera switch is copied as root, so a pull doesn't update it
   d=$(repo_dir archminimal-hypr)
   if [[ -x /usr/local/bin/archminimal-camera && -f $d/bin/archminimal-camera ]] &&
@@ -623,12 +702,14 @@ cmd_update() {
 }
 
 cmd_check() {
-  local d fail=0
-  d=$(repo_dir zsh);        [[ -d $d ]] && { step "zsh";        run make -s -C "$d" check || fail=1; }
-  d=$(repo_dir tmux);       [[ -d $d ]] && { step "tmux";       run make -s -C "$d" check || fail=1; }
-  d=$(repo_dir nvim);       [[ -d $d ]] && { step "nvim";       run make -s -C "$d" check || fail=1; }
-  d=$(repo_dir archminimal-hypr); [[ -d $d ]] && { step "archminimal-hypr"; run make -s -C "$d" lint || fail=1; }
-  d=$(repo_dir archminimal-greeter); [[ -d $d ]] && { step "archminimal-greeter"; run make -s -C "$d" lint || fail=1; }
+  local r d target fail=0
+  for r in "${REPOS[@]}"; do
+    step "$r"
+    d=$(repo_dir "$r")
+    if ! is_ours "$d" "$r"; then warn "not cloned, or ${d/#$HOME/\~} is another repo: run 'setup repos'"; fail=1; continue; fi
+    case $r in archminimal-*) target=lint ;; *) target=check ;; esac
+    run make -s -C "$d" "$target" || fail=1
+  done
   (( fail == 0 )) || die "some checks failed"
 }
 
